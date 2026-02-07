@@ -1,0 +1,412 @@
+//
+//  ImageDetailView.swift
+//  Microfiche
+//
+//  Created by David Hoang on 6/8/25.
+//
+
+import SwiftUI
+import PDFKit
+
+// MARK: - Reusable Chip Section
+
+struct EditableChipSection: View {
+    let title: String
+    let itemName: String
+    @Binding var items: [String]
+    @Binding var isEditing: Bool
+    @Binding var newItem: String
+    let chipColor: Color
+    let onSave: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                    .font(.headline)
+                Spacer()
+                Button(action: {
+                    isEditing.toggle()
+                    if !isEditing { onSave() }
+                }) {
+                    Image(systemName: isEditing ? "checkmark" : "plus")
+                }
+                .buttonStyle(BorderlessButtonStyle())
+            }
+
+            if isEditing {
+                HStack {
+                    TextField("Add \(itemName)", text: $newItem)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                    Button("Add") {
+                        if !newItem.isEmpty && !items.contains(newItem) {
+                            items.append(newItem)
+                            newItem = ""
+                            onSave()
+                        }
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+                }
+            }
+
+            if items.isEmpty {
+                Text("No \(title.lowercased())")
+                    .foregroundColor(.secondary)
+                    .italic()
+            } else {
+                LazyVGrid(columns: Array(repeating: .init(.flexible()), count: 2), spacing: 8) {
+                    ForEach(items, id: \.self) { item in
+                        HStack {
+                            Text(item)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(chipColor)
+                                .cornerRadius(8)
+                            Spacer()
+                            if isEditing {
+                                Button(action: {
+                                    items.removeAll { $0 == item }
+                                    onSave()
+                                }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.red)
+                                }
+                                .buttonStyle(BorderlessButtonStyle())
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Image Detail View
+
+struct ImageDetailView: View {
+    let file: ImageFile
+    let onBack: () -> Void
+
+    @State private var tags: [String] = []
+    @State private var labels: [String] = []
+    @State private var comments: String = ""
+    @State private var whereFrom: String = ""
+    @State private var isEditingTags = false
+    @State private var isEditingLabels = false
+    @State private var isEditingComments = false
+    @State private var isEditingWhereFrom = false
+    @State private var newTag: String = ""
+    @State private var newLabel: String = ""
+    @State private var escapeMonitor: Any?
+    @State private var detailImage: NSImage?
+    @State private var isLoadingImage = true
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Button(action: onBack) {
+                    HStack {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
+                }
+                .buttonStyle(BorderlessButtonStyle())
+
+                Spacer()
+
+                Text(file.name)
+                    .font(.headline)
+                    .lineLimit(1)
+
+                Spacer()
+
+                HStack(spacing: 16) {
+                    Button(action: { saveMetadata() }) {
+                        Image(systemName: "square.and.arrow.down")
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+                    .help("Save metadata")
+
+                    Button(action: {}) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+
+                    Button(action: {}) {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+                }
+            }
+            .padding()
+            .background(Color(NSColor.controlBackgroundColor))
+
+            Divider()
+
+            // Main content
+            HStack(spacing: 0) {
+                // Left side - Image
+                VStack {
+                    if file.url.pathExtension.lowercased() == "pdf" {
+                        PDFKitView(url: file.url)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if file.url.pathExtension.lowercased() == "svg" {
+                        SVGImageView(url: file.url)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .aspectRatio(contentMode: .fit)
+                    } else {
+                        if let image = detailImage {
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                        } else if isLoadingImage {
+                            ProgressView()
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(NSColor.windowBackgroundColor))
+                .onAppear {
+                    loadDetailImage()
+                }
+
+                Divider()
+
+                // Right side - Metadata
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        EditableChipSection(
+                            title: "Tags",
+                            itemName: "tag",
+                            items: $tags,
+                            isEditing: $isEditingTags,
+                            newItem: $newTag,
+                            chipColor: Color.accentColor.opacity(0.2),
+                            onSave: saveMetadata
+                        )
+
+                        EditableChipSection(
+                            title: "Labels",
+                            itemName: "label",
+                            items: $labels,
+                            isEditing: $isEditingLabels,
+                            newItem: $newLabel,
+                            chipColor: Color.orange.opacity(0.2),
+                            onSave: saveMetadata
+                        )
+
+                        // Comments Section
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Comments")
+                                    .font(.headline)
+                                Spacer()
+                                Button(action: {
+                                    isEditingComments.toggle()
+                                    if !isEditingComments { saveMetadata() }
+                                }) {
+                                    Image(systemName: isEditingComments ? "checkmark" : "pencil")
+                                }
+                                .buttonStyle(BorderlessButtonStyle())
+                            }
+                            if isEditingComments {
+                                TextEditor(text: $comments)
+                                    .frame(minHeight: 100)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .onChange(of: comments) { saveMetadata() }
+                            } else {
+                                if comments.isEmpty {
+                                    Text("No comments")
+                                        .foregroundColor(.secondary)
+                                        .italic()
+                                } else {
+                                    Text(comments)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                        }
+
+                        // Where From Section
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Where From")
+                                    .font(.headline)
+                                Spacer()
+                                Button(action: {
+                                    isEditingWhereFrom.toggle()
+                                    if !isEditingWhereFrom { saveMetadata() }
+                                }) {
+                                    Image(systemName: isEditingWhereFrom ? "checkmark" : "pencil")
+                                }
+                                .buttonStyle(BorderlessButtonStyle())
+                            }
+                            if isEditingWhereFrom {
+                                TextField("Enter source", text: $whereFrom)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .onSubmit { saveMetadata() }
+                                    .onChange(of: whereFrom) { saveMetadata() }
+                            } else {
+                                if whereFrom.isEmpty {
+                                    Text("No source specified")
+                                        .foregroundColor(.secondary)
+                                        .italic()
+                                } else {
+                                    Text(whereFrom)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                        }
+
+                        // File Info Section
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("File Info")
+                                .font(.headline)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                InfoRow(label: "Name", value: file.name)
+                                InfoRow(label: "Path", value: file.url.path)
+                                InfoRow(label: "Type", value: file.url.pathExtension.uppercased())
+
+                                if let fileSize = file.url.formattedFileSize() {
+                                    InfoRow(label: "Size", value: fileSize)
+                                }
+
+                                if let creationDate = file.url.formattedCreationDate() {
+                                    InfoRow(label: "Created", value: creationDate)
+                                }
+
+                                if let modificationDate = file.url.formattedModificationDate() {
+                                    InfoRow(label: "Modified", value: modificationDate)
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                }
+                .frame(width: 300)
+                .background(Color(NSColor.controlBackgroundColor))
+            }
+        }
+        .onAppear {
+            loadMetadata()
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                if event.keyCode == 53 {
+                    onBack()
+                    return nil
+                }
+                return event
+            }
+        }
+        .onDisappear {
+            if let monitor = escapeMonitor {
+                NSEvent.removeMonitor(monitor)
+                escapeMonitor = nil
+            }
+            saveMetadata()
+        }
+    }
+
+    // MARK: - Metadata
+
+    private func loadMetadata() {
+        var loadedFromFileSystem = false
+
+        if let tagsData = try? file.url.extendedAttribute(forName: "com.microfiche.tags"),
+           let tagsString = String(data: tagsData, encoding: .utf8) {
+            tags = tagsString.components(separatedBy: ",").filter { !$0.isEmpty }
+            loadedFromFileSystem = true
+        }
+
+        if let labelsData = try? file.url.extendedAttribute(forName: "com.microfiche.labels"),
+           let labelsString = String(data: labelsData, encoding: .utf8) {
+            labels = labelsString.components(separatedBy: ",").filter { !$0.isEmpty }
+            loadedFromFileSystem = true
+        }
+
+        if let commentsData = try? file.url.extendedAttribute(forName: "com.microfiche.comments"),
+           let commentsString = String(data: commentsData, encoding: .utf8) {
+            comments = commentsString
+            loadedFromFileSystem = true
+        }
+
+        if let whereFromData = try? file.url.extendedAttribute(forName: "com.microfiche.whereFrom"),
+           let whereFromString = String(data: whereFromData, encoding: .utf8) {
+            whereFrom = whereFromString
+            loadedFromFileSystem = true
+        }
+
+        if !loadedFromFileSystem {
+            loadFromUserDefaults()
+        }
+    }
+
+    private func saveMetadata() {
+        guard FileManager.default.isWritableFile(atPath: file.url.path) else {
+            saveToUserDefaults()
+            return
+        }
+
+        do {
+            try file.url.setFinderComment(comments)
+            try file.url.setFinderTagsAndLabels(tags: tags, labels: labels)
+        } catch {
+            saveToUserDefaults()
+        }
+    }
+
+    private func saveToUserDefaults() {
+        let metadata: [String: Any] = [
+            "tags": tags,
+            "labels": labels,
+            "comments": comments,
+            "whereFrom": whereFrom
+        ]
+
+        let key = "metadata_\(file.id.uuidString)"
+        UserDefaults.standard.set(metadata, forKey: key)
+    }
+
+    private func loadFromUserDefaults() {
+        let key = "metadata_\(file.id.uuidString)"
+        if let metadata = UserDefaults.standard.dictionary(forKey: key) {
+            tags = metadata["tags"] as? [String] ?? []
+            labels = metadata["labels"] as? [String] ?? []
+            comments = metadata["comments"] as? String ?? ""
+            whereFrom = metadata["whereFrom"] as? String ?? ""
+        }
+    }
+
+    private func loadDetailImage() {
+        if let cached = PreviewImageCache.shared.getImage(for: file.url) {
+            self.detailImage = cached
+            self.isLoadingImage = false
+            return
+        }
+
+        PreviewImageCache.shared.preloadImage(for: file.url) { image in
+            self.detailImage = image
+            self.isLoadingImage = false
+        }
+    }
+}
+
+// MARK: - Info Row
+
+struct InfoRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .frame(width: 60, alignment: .leading)
+            Text(value)
+                .font(.caption)
+                .textSelection(.enabled)
+            Spacer()
+        }
+    }
+}

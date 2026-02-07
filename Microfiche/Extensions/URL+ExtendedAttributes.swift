@@ -10,7 +10,7 @@ import Foundation
 extension URL {
     func extendedAttribute(forName name: String) throws -> Data {
         let data = try withUnsafeFileSystemRepresentation { fileSystemPath in
-            var size = getxattr(fileSystemPath, name, nil, 0, 0, 0)
+            let size = getxattr(fileSystemPath, name, nil, 0, 0, 0)
             guard size >= 0 else {
                 throw POSIXError(.init(rawValue: errno)!)
             }
@@ -52,7 +52,7 @@ extension URL {
     
     func listExtendedAttributes() throws -> [String] {
         try withUnsafeFileSystemRepresentation { fileSystemPath in
-            var size = listxattr(fileSystemPath, nil, 0, 0)
+            let size = listxattr(fileSystemPath, nil, 0, 0)
             guard size >= 0 else {
                 throw POSIXError(.init(rawValue: errno)!)
             }
