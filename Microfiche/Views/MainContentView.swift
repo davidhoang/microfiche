@@ -25,9 +25,6 @@ struct MainContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Divider()
-                .background(Color(NSColor.separatorColor))
-
             VStack {
                 if imageFiles.isEmpty {
                     Spacer()
@@ -77,7 +74,7 @@ struct MainContentView: View {
                         Text(mode.rawValue).tag(mode)
                     }
                 }
-                .pickerStyle(SegmentedPickerStyle())
+                .pickerStyle(.segmented)
             }
 
             if viewMode == .grid {
@@ -87,20 +84,14 @@ struct MainContentView: View {
                             Text(size.rawValue).tag(size)
                         }
                     }
-                    .pickerStyle(SegmentedPickerStyle())
+                    .pickerStyle(.segmented)
                     .frame(width: 150)
                     .padding(.trailing)
                 }
             }
         }
-        .toolbarBackground(Color(NSColor.windowBackgroundColor), for: .windowToolbar)
-        .toolbarBackground(.visible, for: .windowToolbar)
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.15), radius: 8, x: -2, y: 0)
-        .padding(.leading, 2)
-        .padding(.trailing, 2)
-        .padding(.vertical, 2)
+        .microficheToolbarChrome()
+        .microficheDetailChrome()
         .onChange(of: gridThumbnailSize) {
             updateColumns(for: lastKnownWidth)
         }
@@ -194,16 +185,7 @@ struct GridCell: View {
             FileThumbnailView(file: file, size: size, onRename: onRename)
                 .frame(width: size, height: size)
         }
-        .padding(6)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(NSColor.controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? Color.accentColor : Color(NSColor.separatorColor), lineWidth: isSelected ? 4 : 3)
-        )
-        .shadow(color: isSelected ? Color.accentColor.opacity(0.4) : .clear, radius: isSelected ? 10 : 0)
+        .contentSelectionChrome(isSelected: isSelected)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { onDoubleClickImage(file.id) }
         .onTapGesture { onSelectImage(file.id) }
@@ -253,7 +235,7 @@ struct ImageListView: View {
                     }
                     .padding(.vertical, 2)
                     .contentShape(Rectangle())
-                    .background(selectedImageFileIDs.contains(file.id) ? Color.accentColor.opacity(0.2) : Color.clear)
+                    .sidebarSelectionBackground(isSelected: selectedImageFileIDs.contains(file.id))
                     .simultaneousGesture(
                         TapGesture(count: 1)
                             .onEnded { _ in onSelectImage(file.id) }

@@ -13,6 +13,7 @@ class PreviewImageCache {
 
     private let cache = NSCache<NSURL, NSImage>()
     private let processingQueue = DispatchQueue(label: "com.microfiche.previewcache", qos: .userInitiated, attributes: .concurrent)
+    private let loadSemaphore = DispatchSemaphore(value: 6)
 
     private init() {
         // Configure cache limits - store up to 100 preview images (roughly 2-5GB)
@@ -32,11 +33,12 @@ class PreviewImageCache {
             return
         }
 
-        // Load on background queue
+        // Load on background queue with bounded concurrency
         processingQueue.async { [weak self] in
             guard let self = self else { return }
+            self.loadSemaphore.wait()
+            defer { self.loadSemaphore.signal() }
 
-            // Load and decode image
             guard let image = self.loadAndOptimizeImage(from: url) else {
                 DispatchQueue.main.async {
                     completion?(nil)
@@ -55,44 +57,7 @@ class PreviewImageCache {
     }
 
     private func loadAndOptimizeImage(from url: URL) -> NSImage? {
-        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-            return nil
-        }
-
-        // Get image properties without decoding
-        guard let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [String: Any],
-              let width = properties[kCGImagePropertyPixelWidth as String] as? CGFloat,
-              let height = properties[kCGImagePropertyPixelHeight as String] as? CGFloat else {
-            return NSImage(contentsOf: url)
-        }
-
-        // Calculate optimal size for preview (max 2000px on longest side)
-        let maxDimension: CGFloat = 2000
-        let scale: CGFloat
-        if max(width, height) > maxDimension {
-            scale = maxDimension / max(width, height)
-        } else {
-            scale = 1.0
-        }
-
-        let targetWidth = width * scale
-        let targetHeight = height * scale
-
-        // Create thumbnail with decoding
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: max(targetWidth, targetHeight),
-            kCGImageSourceShouldCache: false // We handle our own caching
-        ]
-
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
-            return NSImage(contentsOf: url)
-        }
-
-        // Convert to NSImage
-        let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: targetWidth, height: targetHeight))
-        return nsImage
+        ImageThumbnailGenerator.thumbnail(from: url, maxPixelSize: 2000)
     }
 
     func clearCache() {

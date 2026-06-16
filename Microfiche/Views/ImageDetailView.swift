@@ -104,43 +104,44 @@ struct ImageDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack {
-                Button(action: onBack) {
-                    HStack {
-                        Image(systemName: "chevron.left")
-                        Text("Back")
+            LiquidGlassPanel(cornerRadius: 0) {
+                HStack {
+                    Button(action: onBack) {
+                        HStack {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                    }
+                    .microficheIconButton()
+
+                    Spacer()
+
+                    Text(file.name)
+                        .font(.headline)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    HStack(spacing: 16) {
+                        Button(action: { saveMetadata() }) {
+                            Image(systemName: "square.and.arrow.down")
+                        }
+                        .microficheIconButton()
+                        .help("Save metadata")
+
+                        Button(action: {}) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .microficheIconButton()
+
+                        Button(action: {}) {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .microficheIconButton()
                     }
                 }
-                .buttonStyle(BorderlessButtonStyle())
-
-                Spacer()
-
-                Text(file.name)
-                    .font(.headline)
-                    .lineLimit(1)
-
-                Spacer()
-
-                HStack(spacing: 16) {
-                    Button(action: { saveMetadata() }) {
-                        Image(systemName: "square.and.arrow.down")
-                    }
-                    .buttonStyle(BorderlessButtonStyle())
-                    .help("Save metadata")
-
-                    Button(action: {}) {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                    .buttonStyle(BorderlessButtonStyle())
-
-                    Button(action: {}) {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                    .buttonStyle(BorderlessButtonStyle())
-                }
+                .padding()
             }
-            .padding()
-            .background(Color(NSColor.controlBackgroundColor))
 
             Divider()
 
@@ -174,8 +175,9 @@ struct ImageDetailView: View {
                 Divider()
 
                 // Right side - Metadata
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
+                LiquidGlassPanel(cornerRadius: 12) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 24) {
                         EditableChipSection(
                             title: "Tags",
                             itemName: "tag",
@@ -285,7 +287,8 @@ struct ImageDetailView: View {
                     .padding()
                 }
                 .frame(width: 300)
-                .background(Color(NSColor.controlBackgroundColor))
+                .padding(.trailing, 8)
+                .padding(.vertical, 8)
             }
         }
         .onAppear {

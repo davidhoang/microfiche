@@ -18,15 +18,13 @@ enum ImagePrefetcher {
     ) {
         guard let currentIndex = imageFiles.firstIndex(where: { $0.id == file.id }) else { return }
 
-        // Prefetch thumbnails
+        // Prefetch thumbnails (decode + cache, not just lookup)
         let thumbEnd = min(currentIndex + 1 + thumbnailRange, imageFiles.count)
         for index in (currentIndex + 1)..<thumbEnd {
             let prefetchFile = imageFiles[index]
             let ext = prefetchFile.url.pathExtension.lowercased()
             if ext != "pdf" && ext != "svg" {
-                DispatchQueue.global(qos: .background).async {
-                    _ = ImageCache.shared.getImage(for: prefetchFile.url, size: thumbnailSize)
-                }
+                ImageCache.shared.preloadImage(for: prefetchFile.url, size: thumbnailSize)
             }
         }
 

@@ -49,7 +49,7 @@ struct OptimizedAsyncImage: View {
         hasError = false
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let image = loadAndResizeImage()
+            let image = ImageThumbnailGenerator.squareThumbnail(from: url, size: size)
             DispatchQueue.main.async {
                 self.isLoading = false
                 if let image = image {
@@ -60,33 +60,6 @@ struct OptimizedAsyncImage: View {
                 }
             }
         }
-    }
-
-    private func loadAndResizeImage() -> NSImage? {
-        guard let sourceImage = NSImage(contentsOf: url) else { return nil }
-        let targetSize = NSSize(width: size, height: size)
-        let thumbnail = NSImage(size: targetSize)
-
-        let imageAspect = sourceImage.size.width / sourceImage.size.height
-        let targetAspect = targetSize.width / targetSize.height
-        var drawRect = NSRect(origin: .zero, size: targetSize)
-        if imageAspect > targetAspect {
-            let scaledHeight = targetSize.width / imageAspect
-            drawRect.origin.y = (targetSize.height - scaledHeight) / 2
-            drawRect.size = NSSize(width: targetSize.width, height: scaledHeight)
-        } else {
-            let scaledWidth = targetSize.height * imageAspect
-            drawRect.origin.x = (targetSize.width - scaledWidth) / 2
-            drawRect.size = NSSize(width: scaledWidth, height: targetSize.height)
-        }
-
-        thumbnail.lockFocus()
-        sourceImage.draw(in: drawRect,
-                         from: NSRect(origin: .zero, size: sourceImage.size),
-                         operation: .copy,
-                         fraction: 1.0)
-        thumbnail.unlockFocus()
-        return thumbnail
     }
 }
 

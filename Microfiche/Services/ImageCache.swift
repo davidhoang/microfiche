@@ -30,6 +30,15 @@ class ImageCache {
     }
 
     func getImage(for url: URL, size: CGFloat) -> NSImage? {
+        if let image = cachedImage(for: url, size: size) {
+            PerformanceMonitor.shared.recordCacheHit()
+            return image
+        }
+        PerformanceMonitor.shared.recordCacheMiss()
+        return nil
+    }
+
+    private func cachedImage(for url: URL, size: CGFloat) -> NSImage? {
         let key = cacheKey(for: url, size: size)
 
         if let cachedImage = cache.object(forKey: key as NSString) {
@@ -41,12 +50,10 @@ class ImageCache {
             if let cacheAttributes = try? FileManager.default.attributesOfItem(atPath: cacheURL.path),
                let sourceAttributes = try? FileManager.default.attributesOfItem(atPath: url.path),
                let cacheModDate = cacheAttributes[.modificationDate] as? Date,
-               let sourceModDate = sourceAttributes[.modificationDate] as? Date {
-
-                if sourceModDate > cacheModDate {
-                    try? FileManager.default.removeItem(at: cacheURL)
-                    return nil
-                }
+               let sourceModDate = sourceAttributes[.modificationDate] as? Date,
+               sourceModDate > cacheModDate {
+                try? FileManager.default.removeItem(at: cacheURL)
+                return nil
             }
 
             cache.setObject(image, forKey: key as NSString)
@@ -63,6 +70,17 @@ class ImageCache {
         let cacheURL = cacheDirectory.appendingPathComponent(key)
         if let data = image.tiffRepresentation {
             try? data.write(to: cacheURL)
+        }
+    }
+
+    /// Loads and caches a thumbnail if not already present.
+    func preloadImage(for url: URL, size: CGFloat) {
+        if cachedImage(for: url, size: size) != nil { return }
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            guard let image = ImageThumbnailGenerator.squareThumbnail(from: url, size: size) else { return }
+            self.setImage(image, for: url, size: size)
         }
     }
 

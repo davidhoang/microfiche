@@ -18,12 +18,37 @@ final class MicroficheTests: XCTestCase {
         // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
-    func testExample() throws {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // Any test you write for XCTest can be annotated as throws and async.
-        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions afterwards.
+    func testSquareThumbnailFromPNG() throws {
+        let pngData = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )!
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("microfiche-test.png")
+        try pngData.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let thumbnail = ImageThumbnailGenerator.squareThumbnail(from: url, size: 40)
+        XCTAssertNotNil(thumbnail)
+        XCTAssertEqual(thumbnail?.size.width, 40)
+        XCTAssertEqual(thumbnail?.size.height, 40)
+    }
+
+    func testImageCachePreloadPopulatesMemory() throws {
+        let pngData = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )!
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("microfiche-cache-test.png")
+        try pngData.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let expectation = expectation(description: "preload completes")
+        ImageCache.shared.preloadImage(for: url, size: 40)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            XCTAssertNotNil(ImageCache.shared.getImage(for: url, size: 40))
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 3.0)
     }
 
     func testPerformanceExample() throws {
