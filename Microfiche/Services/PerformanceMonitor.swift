@@ -27,4 +27,13 @@ class PerformanceMonitor: ObservableObject {
             self.cacheHits = 0
         }
     }
+
+    func recordCacheHit() {
+        totalRequests += 1
+        cacheHits += 1
+    }
+
+    func recordCacheMiss() {
+        totalRequests += 1
+    }
 }

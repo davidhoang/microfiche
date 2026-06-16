@@ -31,7 +31,7 @@ struct SidebarView: View {
                 Button(action: onLinkFolder) {
                     Image(systemName: "plus")
                 }
-                .buttonStyle(BorderlessButtonStyle())
+                .microficheIconButton()
                 .help("Add Folder")
             }
             .padding([.top, .horizontal])
@@ -45,7 +45,7 @@ struct SidebarView: View {
                 .onTapGesture {
                     onSelect(.all)
                 }
-                .background(selection == .all ? Color.accentColor.opacity(0.2) : Color.clear)
+                .sidebarSelectionBackground(isSelected: selection == .all)
                 .listRowSeparator(.hidden)
 
                 ForEach(folderURLs, id: \.self) { url in
@@ -57,7 +57,7 @@ struct SidebarView: View {
                     .onTapGesture {
                         onSelect(.folder(url))
                     }
-                    .background(selection == .folder(url) ? Color.accentColor.opacity(0.2) : Color.clear)
+                    .sidebarSelectionBackground(isSelected: selection == .folder(url))
                     .listRowSeparator(.hidden)
                     .contextMenu {
                         Button("Remove Folder", role: .destructive) {
@@ -79,7 +79,7 @@ struct SidebarView: View {
                 Button(action: onCreateContactSheet) {
                     Image(systemName: "plus")
                 }
-                .buttonStyle(BorderlessButtonStyle())
+                .microficheIconButton()
                 .help("New Contact Sheet")
             }
             .padding([.horizontal])
@@ -110,7 +110,7 @@ struct SidebarView: View {
 
             Spacer()
         }
-        .background(Color(NSColor.windowBackgroundColor))
+        .navigationSplitViewColumnWidth(min: 180, ideal: 220)
     }
 }
 
@@ -161,7 +161,7 @@ struct ContactSheetSidebarItem: View {
                 onSelect()
             }
         }
-        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .sidebarSelectionBackground(isSelected: isSelected)
         .overlay(
             RoundedRectangle(cornerRadius: 4)
                 .stroke(isDropTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
