@@ -179,6 +179,7 @@ struct GridCell: View {
     let onRename: (URL, String) -> Void
     let contactSheets: [ContactSheet]
     let onAddToContactSheet: (UUID, URL) -> Void
+    @State private var isHovered = false
 
     var body: some View {
         VStack {
@@ -186,7 +187,9 @@ struct GridCell: View {
                 .frame(width: size, height: size)
         }
         .contentSelectionChrome(isSelected: isSelected)
+        .contentHoverDynamics(isHovered: isHovered, isSelected: isSelected)
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         .onTapGesture(count: 2) { onDoubleClickImage(file.id) }
         .onTapGesture { onSelectImage(file.id) }
         .contextMenu {
@@ -217,32 +220,12 @@ struct ImageListView: View {
         ScrollViewReader { proxy in
             List {
                 ForEach(imageFiles) { file in
-                    HStack {
-                        FileThumbnailView(file: file, size: 40, onRename: onRename)
-                            .frame(width: 40, height: 40)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(6)
-                        VStack(alignment: .leading) {
-                            EditableFileNameView(file: file, onRename: onRename)
-                                .font(.body)
-                                .lineLimit(1)
-                            Text(file.url.path)
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                    }
-                    .padding(.vertical, 2)
-                    .contentShape(Rectangle())
-                    .sidebarSelectionBackground(isSelected: selectedImageFileIDs.contains(file.id))
-                    .simultaneousGesture(
-                        TapGesture(count: 1)
-                            .onEnded { _ in onSelectImage(file.id) }
-                    )
-                    .simultaneousGesture(
-                        TapGesture(count: 2)
-                            .onEnded { _ in onDoubleClickImage(file.id) }
+                    ImageListRow(
+                        file: file,
+                        isSelected: selectedImageFileIDs.contains(file.id),
+                        onSelectImage: onSelectImage,
+                        onDoubleClickImage: onDoubleClickImage,
+                        onRename: onRename
                     )
                     .id(file.id)
                     .onAppear {
@@ -265,6 +248,49 @@ struct ImageListView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - List Row
+
+struct ImageListRow: View {
+    let file: ImageFile
+    let isSelected: Bool
+    let onSelectImage: (UUID) -> Void
+    let onDoubleClickImage: (UUID) -> Void
+    let onRename: (URL, String) -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack {
+            FileThumbnailView(file: file, size: 40, onRename: onRename)
+                .frame(width: 40, height: 40)
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(6)
+            VStack(alignment: .leading) {
+                EditableFileNameView(file: file, onRename: onRename)
+                    .font(.body)
+                    .lineLimit(1)
+                Text(file.url.path)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .sidebarSelectionBackground(isSelected: isSelected)
+        .sidebarHoverBackground(isHovered: isHovered, isSelected: isSelected)
+        .onHover { isHovered = $0 }
+        .simultaneousGesture(
+            TapGesture(count: 1)
+                .onEnded { _ in onSelectImage(file.id) }
+        )
+        .simultaneousGesture(
+            TapGesture(count: 2)
+                .onEnded { _ in onDoubleClickImage(file.id) }
+        )
     }
 }
 
