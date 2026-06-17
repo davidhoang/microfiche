@@ -70,6 +70,59 @@ extension View {
     }
 }
 
+// MARK: - Hover Dynamics
+
+private extension Animation {
+    static let microficheHover = Animation.easeOut(duration: 0.18)
+}
+
+extension View {
+    /// Subtle lift and highlight when hovering grid content cells.
+    @ViewBuilder
+    func contentHoverDynamics(isHovered: Bool, isSelected: Bool, cornerRadius: CGFloat = 10) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let scale: CGFloat = isHovered ? (isSelected ? 1.01 : 1.02) : 1.0
+
+        self
+            .scaleEffect(scale, anchor: .center)
+            .background {
+                if isHovered && !isSelected {
+                    shape.fill(Color.primary.opacity(0.05))
+                }
+            }
+            .overlay {
+                if isHovered {
+                    shape.stroke(
+                        isSelected ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.1),
+                        lineWidth: 1
+                    )
+                }
+            }
+            .shadow(
+                color: Color.black.opacity(isHovered ? 0.08 : 0),
+                radius: isHovered ? 8 : 0,
+                y: isHovered ? 3 : 0
+            )
+            .animation(.microficheHover, value: isHovered)
+    }
+
+    /// Subtle background tint for sidebar/list rows on hover.
+    @ViewBuilder
+    func sidebarHoverBackground(isHovered: Bool, isSelected: Bool, cornerRadius: CGFloat = 6) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        self
+            .background {
+                if isHovered && !isSelected {
+                    shape.fill(Color.primary.opacity(0.06))
+                } else if isHovered && isSelected {
+                    shape.fill(Color.accentColor.opacity(0.24))
+                }
+            }
+            .animation(.microficheHover, value: isHovered)
+    }
+}
+
 // MARK: - Floating Panel
 
 struct LiquidGlassPanel<Content: View>: View {
