@@ -75,7 +75,9 @@ struct MainContentView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .fixedSize()
             }
+            .hideSharedBackgroundIfAvailable()
 
             if viewMode == .grid {
                 ToolbarItem {
@@ -85,9 +87,9 @@ struct MainContentView: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .frame(width: 150)
-                    .padding(.trailing)
+                    .fixedSize()
                 }
+                .hideSharedBackgroundIfAvailable()
             }
         }
         .microficheToolbarChrome()
