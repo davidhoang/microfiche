@@ -5,83 +5,187 @@
 //  Created by David Hoang on 6/8/25.
 //
 
+import AppKit
 import Foundation
-import SwiftUI
+import ImageIO
+import PDFKit
 
-class ImageCache {
+final class ImageCache {
     static let shared = ImageCache()
-    private var cache = NSCache<NSString, NSImage>()
+
+    typealias Completion = (NSImage?) -> Void
+
+    private let cache = NSCache<NSString, NSImage>()
     private let fileManager = FileManager.default
     private let cacheDirectory: URL
+    private let stateQueue = DispatchQueue(label: "com.microfiche.thumbnailcache.state")
+    private let ioQueue = DispatchQueue(label: "com.microfiche.thumbnailcache.io", qos: .utility, attributes: .concurrent)
+    private var inFlight: [String: [Completion]] = [:]
 
     private init() {
         let cachesDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
         cacheDirectory = cachesDirectory.appendingPathComponent("MicroficheThumbnails")
         try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
 
-        cache.countLimit = 200
-        cache.totalCostLimit = 50 * 1024 * 1024
+        cache.countLimit = 300
+        cache.totalCostLimit = 80 * 1024 * 1024
     }
 
     func clearCache() {
         cache.removeAllObjects()
+        stateQueue.sync {
+            inFlight.removeAll()
+        }
         try? fileManager.removeItem(at: cacheDirectory)
         try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
     }
 
     func getImage(for url: URL, size: CGFloat) -> NSImage? {
-        if let image = cachedImage(for: url, size: size) {
-            PerformanceMonitor.shared.recordCacheHit()
-            return image
-        }
-        PerformanceMonitor.shared.recordCacheMiss()
-        return nil
+        let key = cacheKey(for: url, size: size)
+        return cache.object(forKey: key as NSString)
     }
 
-    private func cachedImage(for url: URL, size: CGFloat) -> NSImage? {
+    func loadImage(for url: URL, size: CGFloat, completion: @escaping Completion) {
         let key = cacheKey(for: url, size: size)
 
         if let cachedImage = cache.object(forKey: key as NSString) {
-            return cachedImage
+            DispatchQueue.main.async {
+                completion(cachedImage)
+            }
+            return
         }
 
-        let cacheURL = cacheDirectory.appendingPathComponent(key)
-        if let image = NSImage(contentsOf: cacheURL) {
-            if let cacheAttributes = try? FileManager.default.attributesOfItem(atPath: cacheURL.path),
-               let sourceAttributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-               let cacheModDate = cacheAttributes[.modificationDate] as? Date,
-               let sourceModDate = sourceAttributes[.modificationDate] as? Date,
-               sourceModDate > cacheModDate {
-                try? FileManager.default.removeItem(at: cacheURL)
-                return nil
+        stateQueue.async {
+            if self.inFlight[key] != nil {
+                self.inFlight[key]?.append(completion)
+                return
             }
 
-            cache.setObject(image, forKey: key as NSString)
-            return image
-        }
+            self.inFlight[key] = [completion]
 
-        return nil
+            self.ioQueue.async { [weak self] in
+                guard let self = self else { return }
+
+                let image = autoreleasepool {
+                    self.loadImageFromDiskOrSource(for: url, size: size, key: key)
+                }
+
+                let completions = self.stateQueue.sync {
+                    let completions = self.inFlight.removeValue(forKey: key) ?? []
+                    return completions
+                }
+
+                DispatchQueue.main.async {
+                    completions.forEach { $0(image) }
+                }
+            }
+        }
     }
 
-    func setImage(_ image: NSImage, for url: URL, size: CGFloat) {
-        let key = cacheKey(for: url, size: size)
-        cache.setObject(image, forKey: key as NSString)
+    func prefetchImage(for url: URL, size: CGFloat) {
+        loadImage(for: url, size: size) { _ in }
+    }
 
-        let cacheURL = cacheDirectory.appendingPathComponent(key)
-        if let data = image.tiffRepresentation {
-            try? data.write(to: cacheURL)
+    func clearCacheForFile(at url: URL) {
+        let baseKey = String(url.path.hash)
+
+        if let contents = try? fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil) {
+            for file in contents where file.deletingPathExtension().lastPathComponent.hasPrefix(baseKey) {
+                try? fileManager.removeItem(at: file)
+            }
         }
     }
 
-    /// Loads and caches a thumbnail if not already present.
-    func preloadImage(for url: URL, size: CGFloat) {
-        if cachedImage(for: url, size: size) != nil { return }
-
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self else { return }
-            guard let image = ImageThumbnailGenerator.squareThumbnail(from: url, size: size) else { return }
-            self.setImage(image, for: url, size: size)
+    private func loadImageFromDiskOrSource(for url: URL, size: CGFloat, key: String) -> NSImage? {
+        if let diskImage = loadImageFromDisk(for: url, key: key) {
+            cache.setObject(diskImage, forKey: key as NSString, cost: cacheCost(for: diskImage))
+            return diskImage
         }
+
+        guard let image = createThumbnail(for: url, size: size) else {
+            return nil
+        }
+
+        cache.setObject(image, forKey: key as NSString, cost: cacheCost(for: image))
+        persistImage(image, forKey: key)
+        return image
+    }
+
+    private func loadImageFromDisk(for sourceURL: URL, key: String) -> NSImage? {
+        let cacheURL = cacheURL(forKey: key)
+
+        guard fileManager.fileExists(atPath: cacheURL.path) else {
+            return nil
+        }
+
+        if let cacheAttributes = try? fileManager.attributesOfItem(atPath: cacheURL.path),
+           let sourceAttributes = try? fileManager.attributesOfItem(atPath: sourceURL.path),
+           let cacheModDate = cacheAttributes[.modificationDate] as? Date,
+           let sourceModDate = sourceAttributes[.modificationDate] as? Date,
+           sourceModDate > cacheModDate {
+            try? fileManager.removeItem(at: cacheURL)
+            return nil
+        }
+
+        return NSImage(contentsOf: cacheURL)
+    }
+
+    private func createThumbnail(for url: URL, size: CGFloat) -> NSImage? {
+        switch url.pathExtension.lowercased() {
+        case "pdf":
+            return createPDFThumbnail(for: url, size: size)
+        case "svg":
+            return NSImage(contentsOf: url)
+        default:
+            return createRasterThumbnail(for: url, size: size)
+        }
+    }
+
+    private func createRasterThumbnail(for url: URL, size: CGFloat) -> NSImage? {
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            return NSImage(contentsOf: url)
+        }
+
+        let maxPixelSize = max(1, Int(ceil(size * 2)))
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
+            return NSImage(contentsOf: url)
+        }
+
+        return NSImage(
+            cgImage: cgImage,
+            size: NSSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
+        )
+    }
+
+    private func createPDFThumbnail(for url: URL, size: CGFloat) -> NSImage? {
+        guard let pdfDocument = PDFDocument(url: url),
+              let page = pdfDocument.page(at: 0) else {
+            return nil
+        }
+
+        return page.thumbnail(of: .init(width: size * 2, height: size * 2), for: .cropBox)
+    }
+
+    private func persistImage(_ image: NSImage, forKey key: String) {
+        let cacheURL = cacheURL(forKey: key)
+
+        ioQueue.async {
+            guard let data = image.pngData else { return }
+            try? data.write(to: cacheURL, options: .atomic)
+        }
+    }
+
+    private func cacheURL(forKey key: String) -> URL {
+        cacheDirectory
+            .appendingPathComponent(key)
+            .appendingPathExtension("png")
     }
 
     private func cacheKey(for url: URL, size: CGFloat) -> String {
@@ -90,18 +194,18 @@ class ImageCache {
         return "\(pathHash)_\(sizeString)"
     }
 
-    func clearCacheForFile(at url: URL) {
-        let key = cacheKey(for: url, size: 0)
-        let baseKey = key.components(separatedBy: "_").first ?? ""
+    private func cacheCost(for image: NSImage) -> Int {
+        Int(image.size.width * image.size.height * 4)
+    }
+}
 
-        cache.removeObject(forKey: key as NSString)
-
-        if let contents = try? fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil) {
-            for file in contents {
-                if file.lastPathComponent.hasPrefix(baseKey) {
-                    try? fileManager.removeItem(at: file)
-                }
-            }
+private extension NSImage {
+    var pngData: Data? {
+        guard let cgImage = cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
         }
+
+        let representation = NSBitmapImageRep(cgImage: cgImage)
+        return representation.representation(using: .png, properties: [:])
     }
 }

@@ -24,44 +24,47 @@ struct MainContentView: View {
     @State private var lastKnownWidth: CGFloat = 0
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack {
-                if imageFiles.isEmpty {
-                    Spacer()
-                    Image(systemName: "photo.on.rectangle.angled")
-                        .font(.system(size: 50))
-                        .foregroundColor(.secondary.opacity(0.6))
-                        .padding(.bottom)
-                    Text("No images found. Link a folder to begin.")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                } else {
-                    if viewMode == .grid {
-                        ImageGridView(
-                            imageFiles: imageFiles,
-                            selectedImageFileIDs: $selectedImageFileIDs,
-                            onSelectImage: onSelectImage,
-                            onDoubleClickImage: onDoubleClickImage,
-                            thumbnailSize: gridThumbnailSize,
-                            scrollToID: $scrollToID,
-                            columnCount: $gridColumnCount,
-                            onRename: onRename,
-                            contactSheets: contactSheets,
-                            onAddToContactSheet: onAddToContactSheet
-                        )
+        ZStack {
+            mainCanvasBackground
+
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(Color.black.opacity(0.08))
+                    .frame(height: 1)
+
+                VStack {
+                    if imageFiles.isEmpty {
+                        Spacer(minLength: 24)
+                        EmptyLibraryStateView()
+                        Spacer(minLength: 24)
                     } else {
-                        ImageListView(
-                            imageFiles: imageFiles,
-                            selectedImageFileIDs: $selectedImageFileIDs,
-                            onSelectImage: onSelectImage,
-                            onDoubleClickImage: onDoubleClickImage,
-                            scrollToID: $scrollToID,
-                            onRename: onRename
-                        )
+                        if viewMode == .grid {
+                            ImageGridView(
+                                imageFiles: imageFiles,
+                                selectedImageFileIDs: $selectedImageFileIDs,
+                                onSelectImage: onSelectImage,
+                                onDoubleClickImage: onDoubleClickImage,
+                                thumbnailSize: gridThumbnailSize,
+                                scrollToID: $scrollToID,
+                                columnCount: $gridColumnCount,
+                                onRename: onRename,
+                                contactSheets: contactSheets,
+                                onAddToContactSheet: onAddToContactSheet
+                            )
+                        } else {
+                            ImageListView(
+                                imageFiles: imageFiles,
+                                selectedImageFileIDs: $selectedImageFileIDs,
+                                onSelectImage: onSelectImage,
+                                onDoubleClickImage: onDoubleClickImage,
+                                scrollToID: $scrollToID,
+                                onRename: onRename
+                            )
+                        }
                     }
                 }
+                .padding(20)
             }
-            .padding(16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(WidthReader { width in
@@ -92,10 +95,33 @@ struct MainContentView: View {
                 .hideSharedBackgroundIfAvailable()
             }
         }
-        .microficheToolbarChrome()
-        .microficheDetailChrome()
+        .toolbarBackground(Color(NSColor.windowBackgroundColor), for: .windowToolbar)
+        .toolbarBackground(.visible, for: .windowToolbar)
         .onChange(of: gridThumbnailSize) {
             updateColumns(for: lastKnownWidth)
+        }
+    }
+
+    private var mainCanvasBackground: some View {
+        LinearGradient(
+            colors: [
+                Color(NSColor.textBackgroundColor),
+                Color(NSColor.controlBackgroundColor).opacity(0.88)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .overlay(alignment: .topLeading) {
+            Circle()
+                .fill(Color.white.opacity(0.22))
+                .frame(width: 240, height: 240)
+                .blur(radius: 88)
+                .offset(x: -18, y: -86)
+        }
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color.black.opacity(0.04))
+                .frame(width: 1)
         }
     }
 
@@ -108,6 +134,39 @@ struct MainContentView: View {
         let usableWidth = max(0, width - horizontalPadding)
         let computed = max(1, Int((usableWidth + spacing) / (itemOuterWidth + spacing)))
         if computed != gridColumnCount { gridColumnCount = computed }
+    }
+}
+
+private struct EmptyLibraryStateView: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.1))
+                    .frame(width: 96, height: 96)
+
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.system(size: 38, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 8) {
+                Text("LIBRARY")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .tracking(1.4)
+                    .foregroundStyle(.tertiary)
+
+                Text("No images yet")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+
+                Text("Link a folder or drop images into a contact sheet to start building a library.")
+                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
+            }
+        }
+        .padding(.horizontal, 24)
     }
 }
 
@@ -183,14 +242,32 @@ struct GridCell: View {
     let onAddToContactSheet: (UUID, URL) -> Void
 
     var body: some View {
-        VStack {
-            FileThumbnailView(file: file, size: size, onRename: onRename)
-                .frame(width: size, height: size)
+        Button(action: {
+            onSelectImage(file.id)
+        }) {
+            VStack {
+                FileThumbnailView(file: file, size: size, onRename: onRename)
+                    .frame(width: size, height: size)
+            }
+            .padding(6)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(NSColor.controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? Color.accentColor : Color(NSColor.separatorColor), lineWidth: isSelected ? 4 : 3)
+            )
+            .shadow(color: isSelected ? Color.accentColor.opacity(0.3) : .clear, radius: isSelected ? 8 : 0)
+            .contentShape(Rectangle())
         }
-        .contentSelectionChrome(isSelected: isSelected)
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) { onDoubleClickImage(file.id) }
-        .onTapGesture { onSelectImage(file.id) }
+        .buttonStyle(.plain)
+        .simultaneousGesture(
+            TapGesture(count: 2)
+                .onEnded { _ in
+                    onDoubleClickImage(file.id)
+                }
+        )
         .contextMenu {
             if !contactSheets.isEmpty {
                 Menu("Add to Contact Sheet") {
@@ -237,7 +314,8 @@ struct ImageListView: View {
                     }
                     .padding(.vertical, 2)
                     .contentShape(Rectangle())
-                    .sidebarSelectionBackground(isSelected: selectedImageFileIDs.contains(file.id))
+                    .background(selectedImageFileIDs.contains(file.id) ? Color.accentColor.opacity(0.2) : Color.clear)
+                    .listRowBackground(Color.clear)
                     .simultaneousGesture(
                         TapGesture(count: 1)
                             .onEnded { _ in onSelectImage(file.id) }
@@ -258,6 +336,7 @@ struct ImageListView: View {
                 }
             }
             .listStyle(PlainListStyle())
+            .scrollContentBackground(.hidden)
             .onChange(of: scrollToID) { _, newID in
                 if let id = newID {
                     withAnimation(.easeInOut(duration: 0.3)) {

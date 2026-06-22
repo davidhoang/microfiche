@@ -44,6 +44,13 @@ enum ArrowDirection {
 // MARK: - Content View
 
 struct ContentView: View {
+    private enum SidebarLayout {
+        static let minimumWidth: CGFloat = 240
+        static let idealWidth: CGFloat = 280
+        static let maximumWidth: CGFloat = 360
+        static let autoCollapseWidth: CGFloat = 220
+    }
+
     @State private var folderURLs: [URL] = []
     @State private var selection: Selection?
     @State private var imageFiles: [ImageFile] = []
@@ -58,6 +65,7 @@ struct ContentView: View {
     @State private var scrollToID: UUID?
     @State private var gridColumnCount: Int = 1
     @State private var detailViewFile: ImageFile?
+    @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
     @StateObject private var contactSheetStorage = ContactSheetStorage.shared
 
     let supportedExtensions = ["jpg", "jpeg", "png", "pdf", "svg", "gif", "tiff"]
@@ -75,11 +83,12 @@ struct ContentView: View {
                     removal: .move(edge: .trailing).combined(with: .opacity)
                 ))
             } else {
-                NavigationSplitView {
+                NavigationSplitView(columnVisibility: $splitViewVisibility) {
                     SidebarView(
                         folderURLs: folderURLs,
                         contactSheets: contactSheetStorage.contactSheets,
                         selection: selection,
+                        onWidthChange: handleSidebarWidthChange,
                         onLinkFolder: linkFolder,
                         onSelect: { newSelection in
                             selection = newSelection
@@ -101,6 +110,11 @@ struct ContentView: View {
                         onDropToContactSheet: { sheetID, urls in
                             handleDropToContactSheet(sheetID: sheetID, urls: urls)
                         }
+                    )
+                    .navigationSplitViewColumnWidth(
+                        min: SidebarLayout.minimumWidth,
+                        ideal: SidebarLayout.idealWidth,
+                        max: SidebarLayout.maximumWidth
                     )
                 } detail: {
                     MainContentView(
@@ -127,7 +141,7 @@ struct ContentView: View {
                     case .contactSheet(let id):
                         imageFiles = contactSheetStorage.getImages(for: id)
                         let urls = imageFiles.map { $0.url }
-                        PreviewImageCache.shared.preloadLibrary(urls: urls, priority: .userInitiated)
+                        PreviewImageCache.shared.preloadLibrary(urls: urls, priority: .utility)
                     case .none:
                         imageFiles = []
                     }
@@ -201,7 +215,7 @@ struct ContentView: View {
                 }
             }
         }
-        .animation(.easeInOut(duration: 0.3), value: detailViewFile)
+        .animation(.easeOut(duration: 0.18), value: detailViewFile)
         .animation(.easeInOut(duration: 0.08), value: previewedImageFile)
     }
 
@@ -242,6 +256,16 @@ struct ContentView: View {
                 } else {
                     selection = .all
                 }
+            }
+        }
+    }
+
+    private func handleSidebarWidthChange(_ width: CGFloat) {
+        guard splitViewVisibility != .detailOnly else { return }
+
+        if width < SidebarLayout.autoCollapseWidth {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                splitViewVisibility = .detailOnly
             }
         }
     }
@@ -292,7 +316,7 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 self.imageFiles = newImageFiles
                 let urls = newImageFiles.map { $0.url }
-                PreviewImageCache.shared.preloadLibrary(urls: urls, priority: .userInitiated)
+                PreviewImageCache.shared.preloadLibrary(urls: urls, priority: .utility)
             }
         }
     }
@@ -324,7 +348,7 @@ struct ContentView: View {
 
     private func handleDoubleClickImage(for fileID: UUID) {
         if let file = imageFiles.first(where: { $0.id == fileID }) {
-            withAnimation(.easeInOut(duration: 0.3)) {
+            withAnimation(.easeOut(duration: 0.18)) {
                 detailViewFile = file
             }
         }
