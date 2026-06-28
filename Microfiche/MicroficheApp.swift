@@ -9,10 +9,23 @@ import SwiftUI
 
 @main
 struct MicroficheApp: App {
+    private enum WindowLayout {
+        static let defaultWidth: CGFloat = 1371
+        static let defaultHeight: CGFloat = 811
+        static let minimumWidth: CGFloat = 1100
+        static let minimumHeight: CGFloat = 700
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .frame(
+                    minWidth: WindowLayout.minimumWidth,
+                    minHeight: WindowLayout.minimumHeight
+                )
         }
+        .defaultSize(width: WindowLayout.defaultWidth, height: WindowLayout.defaultHeight)
+        .defaultPosition(.center)
         .commands {
             CommandGroup(after: .newItem) {
                 Divider()
