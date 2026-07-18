@@ -240,34 +240,19 @@ struct GridCell: View {
     let onRename: (URL, String) -> Void
     let contactSheets: [ContactSheet]
     let onAddToContactSheet: (UUID, URL) -> Void
+    @State private var isHovered = false
 
     var body: some View {
-        Button(action: {
-            onSelectImage(file.id)
-        }) {
-            VStack {
-                FileThumbnailView(file: file, size: size, onRename: onRename)
-                    .frame(width: size, height: size)
-            }
-            .padding(6)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(NSColor.controlBackgroundColor))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(isSelected ? Color.accentColor : Color(NSColor.separatorColor), lineWidth: isSelected ? 4 : 3)
-            )
-            .shadow(color: isSelected ? Color.accentColor.opacity(0.3) : .clear, radius: isSelected ? 8 : 0)
-            .contentShape(Rectangle())
+        VStack {
+            FileThumbnailView(file: file, size: size, onRename: onRename)
+                .frame(width: size, height: size)
         }
-        .buttonStyle(.plain)
-        .simultaneousGesture(
-            TapGesture(count: 2)
-                .onEnded { _ in
-                    onDoubleClickImage(file.id)
-                }
-        )
+        .contentSelectionChrome(isSelected: isSelected)
+        .contentHoverDynamics(isHovered: isHovered, isSelected: isSelected)
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .onTapGesture(count: 2) { onDoubleClickImage(file.id) }
+        .onTapGesture { onSelectImage(file.id) }
         .contextMenu {
             if !contactSheets.isEmpty {
                 Menu("Add to Contact Sheet") {
@@ -296,33 +281,12 @@ struct ImageListView: View {
         ScrollViewReader { proxy in
             List {
                 ForEach(imageFiles) { file in
-                    HStack {
-                        FileThumbnailView(file: file, size: 40, onRename: onRename)
-                            .frame(width: 40, height: 40)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(6)
-                        VStack(alignment: .leading) {
-                            EditableFileNameView(file: file, onRename: onRename)
-                                .font(.body)
-                                .lineLimit(1)
-                            Text(file.url.path)
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                    }
-                    .padding(.vertical, 2)
-                    .contentShape(Rectangle())
-                    .background(selectedImageFileIDs.contains(file.id) ? Color.accentColor.opacity(0.2) : Color.clear)
-                    .listRowBackground(Color.clear)
-                    .simultaneousGesture(
-                        TapGesture(count: 1)
-                            .onEnded { _ in onSelectImage(file.id) }
-                    )
-                    .simultaneousGesture(
-                        TapGesture(count: 2)
-                            .onEnded { _ in onDoubleClickImage(file.id) }
+                    ImageListRow(
+                        file: file,
+                        isSelected: selectedImageFileIDs.contains(file.id),
+                        onSelectImage: onSelectImage,
+                        onDoubleClickImage: onDoubleClickImage,
+                        onRename: onRename
                     )
                     .id(file.id)
                     .onAppear {
@@ -346,6 +310,50 @@ struct ImageListView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - List Row
+
+struct ImageListRow: View {
+    let file: ImageFile
+    let isSelected: Bool
+    let onSelectImage: (UUID) -> Void
+    let onDoubleClickImage: (UUID) -> Void
+    let onRename: (URL, String) -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack {
+            FileThumbnailView(file: file, size: 40, onRename: onRename)
+                .frame(width: 40, height: 40)
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(6)
+            VStack(alignment: .leading) {
+                EditableFileNameView(file: file, onRename: onRename)
+                    .font(.body)
+                    .lineLimit(1)
+                Text(file.url.path)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .sidebarHoverBackground(isHovered: isHovered, isSelected: isSelected)
+        .listRowBackground(Color.clear)
+        .onHover { isHovered = $0 }
+        .simultaneousGesture(
+            TapGesture(count: 1)
+                .onEnded { _ in onSelectImage(file.id) }
+        )
+        .simultaneousGesture(
+            TapGesture(count: 2)
+                .onEnded { _ in onDoubleClickImage(file.id) }
+        )
     }
 }
 
