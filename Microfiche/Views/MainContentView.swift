@@ -152,15 +152,15 @@ private struct EmptyLibraryStateView: View {
 
             VStack(spacing: 8) {
                 Text("LIBRARY")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .tracking(1.4)
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(0.8)
                     .foregroundStyle(.tertiary)
 
                 Text("No images yet")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.system(size: 26, weight: .semibold))
 
                 Text("Link a folder or drop images into a contact sheet to start building a library.")
-                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 380)

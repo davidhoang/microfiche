@@ -1,5 +1,31 @@
 # Microfiche UI Architecture
 
+## Native macOS Design References
+
+Use Apple's [Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines) as the primary reference for interaction, layout, navigation, materials, typography, color, and accessibility decisions. For the current system appearance, also review [Adopting Liquid Glass](https://developer.apple.com/documentation/TechnologyOverviews/adopting-liquid-glass) before adding custom visual effects.
+
+### Liquid Glass Principles
+
+- Prefer standard SwiftUI and AppKit components so navigation, controls, toolbars, sheets, and accessibility settings inherit native macOS behavior automatically.
+- Treat Liquid Glass as a functional layer for navigation and controls, not as decoration for every container or row.
+- Avoid stacking glass surfaces. Use spacing, alignment, typography, and subtle separators to establish hierarchy within a shared surface.
+- Remove custom backgrounds that compete with system effects in `NavigationSplitView`, sidebars, title bars, and toolbars.
+- Use system materials, semantic colors, standard spacing, and native button styles before introducing custom fills, borders, gradients, or shadows.
+- Keep gradients quiet and contextual. They should support depth without becoming the dominant visual element.
+- Preserve clear separation between navigation and content while allowing the sidebar to read as one fluid region.
+- Test light and dark appearances, increased contrast, reduced transparency, and reduced motion. Custom treatments must remain legible when system effects adapt or disappear.
+- Support arbitrary window sizes and rely on split-view behavior for fluid column resizing.
+
+### Review Checklist
+
+Before merging a visual change, verify that:
+
+1. A native component or material cannot provide the same result more consistently.
+2. Glass is limited to an important navigation or control layer.
+3. No glass-on-glass or card-on-card layering has been introduced.
+4. Text and icons remain legible over changing content and in accessibility modes.
+5. The layout still feels native at minimum, ideal, and expanded window widths.
+
 ## Overview
 
 Microfiche uses a modern, elevated design with clear visual hierarchy inspired by Arc browser and contemporary macOS applications.

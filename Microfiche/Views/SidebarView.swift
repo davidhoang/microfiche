@@ -25,7 +25,7 @@ struct SidebarView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 SidebarSectionCard(
                     eyebrow: "Library",
                     title: "Folders",
@@ -62,6 +62,8 @@ struct SidebarView: View {
                     }
                 }
 
+                SidebarSectionDivider()
+
                 SidebarSectionCard(
                     eyebrow: "Collections",
                     title: "Contact Sheets",
@@ -96,7 +98,10 @@ struct SidebarView: View {
                     }
                 }
             }
-            .padding(14)
+            .background(sidebarSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 14)
         }
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -124,18 +129,25 @@ struct SidebarView: View {
         LinearGradient(
             colors: [
                 Color(NSColor.windowBackgroundColor),
-                Color(NSColor.underPageBackgroundColor).opacity(0.96)
+                Color(NSColor.windowBackgroundColor).opacity(0.97),
+                Color(NSColor.underPageBackgroundColor).opacity(0.28)
             ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+            startPoint: .top,
+            endPoint: .bottom
         )
-        .overlay(alignment: .topTrailing) {
-            Circle()
-                .fill(Color.white.opacity(0.22))
-                .frame(width: 180, height: 180)
-                .blur(radius: 72)
-                .offset(x: 54, y: -58)
-        }
+    }
+
+    private var sidebarSurface: some View {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(NSColor.controlBackgroundColor).opacity(0.24))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
+            }
     }
 }
 
@@ -170,20 +182,20 @@ private struct SidebarSectionCard<Content: View>: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(eyebrow.uppercased())
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .tracking(1)
+                        .font(.system(size: 10, weight: .medium))
+                        .tracking(0.8)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .foregroundStyle(.secondary)
 
                     Text(title)
-                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .font(.system(size: 17, weight: .semibold))
                         .lineLimit(2)
                         .minimumScaleFactor(0.85)
                         .foregroundStyle(.primary)
 
                     Text(detail)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -205,21 +217,15 @@ private struct SidebarSectionCard<Content: View>: View {
             }
         }
         .padding(14)
-        .background(sectionBackground)
     }
+}
 
-    private var sectionBackground: some View {
-        RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Color(NSColor.controlBackgroundColor).opacity(0.58))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.48), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.08), radius: 18, x: 0, y: 10)
+private struct SidebarSectionDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color(NSColor.separatorColor).opacity(0.42))
+            .frame(height: 1)
+            .padding(.horizontal, 14)
     }
 }
 
@@ -234,15 +240,11 @@ private struct SidebarAddButton: View {
                 .frame(width: 30, height: 30)
                 .background(
                     Circle()
-                        .fill(.thinMaterial)
-                        .overlay(
-                            Circle()
-                                .fill(Color.white.opacity(0.22))
-                        )
+                        .fill(Color.primary.opacity(0.055))
                 )
                 .overlay(
                     Circle()
-                        .strokeBorder(Color.white.opacity(0.5), lineWidth: 1)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -260,7 +262,7 @@ private struct SidebarStaticRow: View {
             SidebarSymbolBadge(systemImage: systemImage, isSelected: isSelected)
 
             Text(title)
-                .font(.system(size: 14, weight: isSelected ? .semibold : .medium, design: .rounded))
+                .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
                 .lineLimit(1)
                 .foregroundStyle(.primary)
 
@@ -295,17 +297,11 @@ private struct SidebarRowSurface<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.white.opacity(0.34))
+                .fill(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(borderColor, lineWidth: isDropTargeted ? 2 : 1)
-        )
-        .shadow(
-            color: isSelected ? Color.accentColor.opacity(0.16) : Color.black.opacity(0.04),
-            radius: isSelected ? 10 : 6,
-            x: 0,
-            y: 4
         )
         .animation(.easeInOut(duration: 0.18), value: isSelected)
         .animation(.easeInOut(duration: 0.18), value: isDropTargeted)
@@ -320,7 +316,7 @@ private struct SidebarRowSurface<Content: View>: View {
             return Color.accentColor.opacity(0.35)
         }
 
-        return Color.white.opacity(0.52)
+        return Color.clear
     }
 }
 
@@ -347,7 +343,7 @@ private struct SidebarCountBadge: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -365,11 +361,11 @@ private struct SidebarEmptyMessage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.primary.opacity(0.84))
 
             Text(message)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -377,11 +373,7 @@ private struct SidebarEmptyMessage: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.22))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.36), lineWidth: 1)
+                .fill(Color.primary.opacity(0.035))
         )
     }
 }
@@ -418,7 +410,7 @@ struct ContactSheetSidebarItem: View {
                     .textFieldStyle(.roundedBorder)
             } else {
                 Text(contactSheet.name)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .medium, design: .rounded))
+                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
                     .foregroundStyle(.primary)
                     .onTapGesture(count: 2) {
