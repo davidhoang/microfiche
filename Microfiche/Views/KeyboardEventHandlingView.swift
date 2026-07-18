@@ -23,8 +23,14 @@ struct KeyboardEventHandlingView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
+        guard let view = nsView as? KeyView else { return }
+        view.onDeletePressed = onDeletePressed
+        view.onEscapePressed = onEscapePressed
+        view.onSpacebarPressed = onSpacebarPressed
+        view.onArrowPressed = onArrowPressed
+
         DispatchQueue.main.async {
-            nsView.window?.makeFirstResponder(nsView)
+            view.claimFirstResponderIfAppropriate()
         }
     }
 
@@ -36,6 +42,11 @@ struct KeyboardEventHandlingView: NSViewRepresentable {
 
         override var acceptsFirstResponder: Bool { true }
 
+        func claimFirstResponderIfAppropriate() {
+            guard let window, !(window.firstResponder is NSTextView) else { return }
+            window.makeFirstResponder(self)
+        }
+
         override func keyDown(with event: NSEvent) {
             switch event.keyCode {
             case 51, 117: // 51: Delete, 117: Forward Delete
@@ -44,7 +55,9 @@ struct KeyboardEventHandlingView: NSViewRepresentable {
             case 53: // Escape
                 onEscapePressed?()
             case 49: // Spacebar
-                onSpacebarPressed?()
+                if !event.isARepeat {
+                    onSpacebarPressed?()
+                }
             case 123: // Left arrow
                 onArrowPressed?(.left)
             case 124: // Right arrow

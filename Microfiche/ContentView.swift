@@ -22,23 +22,40 @@ enum ViewMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum GridThumbnailSize: String, CaseIterable, Identifiable {
-    case small = "Small"
-    case medium = "Medium"
-    case large = "Large"
-    var id: String { rawValue }
-
-    var pointSize: CGFloat {
-        switch self {
-        case .small: return 80
-        case .medium: return 120
-        case .large: return 180
-        }
-    }
+enum GridThumbnailSizing {
+    static let minimum: CGFloat = 80
+    static let defaultValue: CGFloat = 120
+    static let maximum: CGFloat = 180
 }
 
 enum ArrowDirection {
     case up, down, left, right
+}
+
+enum ImageNavigation {
+    static func nextIndex(
+        from currentIndex: Int,
+        itemCount: Int,
+        direction: ArrowDirection,
+        viewMode: ViewMode,
+        gridColumnCount: Int
+    ) -> Int? {
+        let verticalStep = viewMode == .grid ? max(1, gridColumnCount) : 1
+        let candidate: Int
+
+        switch direction {
+        case .left:
+            candidate = currentIndex - 1
+        case .right:
+            candidate = currentIndex + 1
+        case .up:
+            candidate = currentIndex - verticalStep
+        case .down:
+            candidate = currentIndex + verticalStep
+        }
+
+        return (0..<itemCount).contains(candidate) ? candidate : nil
+    }
 }
 
 // MARK: - Content View
@@ -55,13 +72,13 @@ struct ContentView: View {
     @State private var selection: Selection?
     @State private var imageFiles: [ImageFile] = []
     @State private var viewMode: ViewMode = .grid
-    @State private var gridThumbnailSize: GridThumbnailSize = .medium
+    @State private var gridThumbnailSize: CGFloat = GridThumbnailSizing.defaultValue
     @State private var selectedImageFileIDs: Set<UUID> = []
-    @State private var lastSelectedImageFileID: UUID?
+    @State private var focusedImageFileID: UUID?
     @State private var showDeleteAlert: Bool = false
     @State private var dontAskAgain: Bool = UserDefaults.standard.bool(forKey: "dontAskDeleteConfirm")
     @State private var pendingDeleteFiles: [ImageFile] = []
-    @State private var previewedImageFile: ImageFile?
+    @State private var isQuickPreviewPresented = false
     @State private var scrollToID: UUID?
     @State private var gridColumnCount: Int = 1
     @State private var detailViewFile: ImageFile?
@@ -146,7 +163,11 @@ struct ContentView: View {
                         imageFiles = []
                     }
                     selectedImageFileIDs = []
-                    lastSelectedImageFileID = nil
+                    focusedImageFileID = nil
+                    isQuickPreviewPresented = false
+                }
+                .onChange(of: viewMode) {
+                    requestScrollToFocusedImage()
                 }
                 .onChange(of: showDeleteAlert) { _, isShowing in
                     if !isShowing {
@@ -166,27 +187,14 @@ struct ContentView: View {
                         }
                     },
                     onEscapePressed: {
-                        if previewedImageFile != nil {
-                            previewedImageFile = nil
+                        if isQuickPreviewPresented {
+                            dismissQuickPreview()
                         } else if !selectedImageFileIDs.isEmpty {
                             selectedImageFileIDs = []
-                            lastSelectedImageFileID = nil
+                            focusedImageFileID = nil
                         }
                     },
-                    onSpacebarPressed: {
-                        if previewedImageFile != nil {
-                            previewedImageFile = nil
-                            return
-                        }
-
-                        guard !selectedImageFileIDs.isEmpty else { return }
-
-                        let idToPreview = selectedImageFileIDs.count == 1 ? selectedImageFileIDs.first : lastSelectedImageFileID
-
-                        if let id = idToPreview, let file = imageFiles.first(where: { $0.id == id }) {
-                            previewedImageFile = file
-                        }
-                    },
+                    onSpacebarPressed: toggleQuickPreview,
                     onArrowPressed: handleArrowKey
                 ))
                 .alert("Move to Trash?", isPresented: $showDeleteAlert) {
@@ -207,16 +215,21 @@ struct ContentView: View {
                     Text(messageText)
                 }
 
-                if let file = previewedImageFile {
+                if isQuickPreviewPresented, let file = focusedImageFile {
                     PreviewView(file: file) {
-                        previewedImageFile = nil
+                        dismissQuickPreview()
                     }
                     .transition(.opacity)
                 }
             }
         }
         .animation(.easeOut(duration: 0.18), value: detailViewFile)
-        .animation(.easeInOut(duration: 0.08), value: previewedImageFile)
+        .animation(.easeInOut(duration: 0.12), value: isQuickPreviewPresented)
+    }
+
+    private var focusedImageFile: ImageFile? {
+        guard let focusedImageFileID else { return nil }
+        return imageFiles.first { $0.id == focusedImageFileID }
     }
 
     // MARK: - Folder Management
@@ -324,8 +337,10 @@ struct ContentView: View {
     // MARK: - Selection
 
     private func handleImageSelection(for fileID: UUID) {
+        var nextFocusedID: UUID? = fileID
+
         if NSApp.currentEvent?.modifierFlags.contains(.shift) == true,
-           let lastID = lastSelectedImageFileID,
+           let lastID = focusedImageFileID,
            let lastIndex = imageFiles.firstIndex(where: { $0.id == lastID }),
            let currentIndex = imageFiles.firstIndex(where: { $0.id == fileID }) {
             let range = min(lastIndex, currentIndex)...max(lastIndex, currentIndex)
@@ -333,13 +348,16 @@ struct ContentView: View {
         } else if NSApp.currentEvent?.modifierFlags.contains(.command) == true {
             if selectedImageFileIDs.contains(fileID) {
                 selectedImageFileIDs.remove(fileID)
+                nextFocusedID = imageFiles.first {
+                    selectedImageFileIDs.contains($0.id)
+                }?.id
             } else {
                 selectedImageFileIDs.insert(fileID)
             }
         } else {
             selectedImageFileIDs = [fileID]
         }
-        lastSelectedImageFileID = fileID
+        focusedImageFileID = nextFocusedID
 
         if let file = imageFiles.first(where: { $0.id == fileID }) {
             PreviewImageCache.shared.preloadImage(for: file.url)
@@ -348,6 +366,7 @@ struct ContentView: View {
 
     private func handleDoubleClickImage(for fileID: UUID) {
         if let file = imageFiles.first(where: { $0.id == fileID }) {
+            isQuickPreviewPresented = false
             withAnimation(.easeOut(duration: 0.18)) {
                 detailViewFile = file
             }
@@ -358,9 +377,12 @@ struct ContentView: View {
 
     private func moveFilesToTrash(_ files: [ImageFile]) {
         let deletedIDs = Set(files.map { $0.id })
-        let wasPreviewedDeleted = previewedImageFile != nil && deletedIDs.contains(previewedImageFile!.id)
+        let wasPreviewedDeleted = isQuickPreviewPresented
+            && focusedImageFileID.map(deletedIDs.contains) == true
         var previewIndex: Int? = nil
-        if wasPreviewedDeleted, let current = previewedImageFile, let idx = imageFiles.firstIndex(of: current) {
+        if wasPreviewedDeleted,
+           let focusedImageFileID,
+           let idx = imageFiles.firstIndex(where: { $0.id == focusedImageFileID }) {
             previewIndex = idx
         }
         let originalFilesSnapshot = imageFiles
@@ -384,15 +406,16 @@ struct ContentView: View {
                 let nextIdx = idx < remaining.count ? idx : (remaining.count - 1)
                 if nextIdx >= 0, nextIdx < remaining.count {
                     let nextFile = remaining[nextIdx]
-                    previewedImageFile = nextFile
                     selectedImageFileIDs = [nextFile.id]
-                    lastSelectedImageFileID = nextFile.id
+                    focusedImageFileID = nextFile.id
                     scrollToID = nextFile.id
                 } else {
-                    previewedImageFile = nil
+                    isQuickPreviewPresented = false
+                    focusedImageFileID = nil
                 }
             } else {
-                previewedImageFile = nil
+                isQuickPreviewPresented = false
+                focusedImageFileID = nil
             }
         } else {
             let remaining = imageFiles
@@ -401,19 +424,19 @@ struct ContentView: View {
                 if candidate >= 0, remaining.indices.contains(candidate) {
                     let nextFile = remaining[candidate]
                     selectedImageFileIDs = [nextFile.id]
-                    lastSelectedImageFileID = nextFile.id
+                    focusedImageFileID = nextFile.id
                     scrollToID = nextFile.id
                 } else {
                     selectedImageFileIDs = []
-                    lastSelectedImageFileID = nil
+                    focusedImageFileID = nil
                 }
             } else if let first = remaining.first {
                 selectedImageFileIDs = [first.id]
-                lastSelectedImageFileID = first.id
+                focusedImageFileID = first.id
                 scrollToID = first.id
             } else {
                 selectedImageFileIDs = []
-                lastSelectedImageFileID = nil
+                focusedImageFileID = nil
             }
         }
     }
@@ -423,62 +446,64 @@ struct ContentView: View {
     private func handleArrowKey(_ direction: ArrowDirection) {
         guard !imageFiles.isEmpty else { return }
 
-        if let currentFile = previewedImageFile, let currentIndex = imageFiles.firstIndex(of: currentFile) {
-            var nextIndex: Int?
-
-            switch direction {
-            case .left:
-                if currentIndex > 0 { nextIndex = currentIndex - 1 }
-            case .right:
-                if currentIndex < imageFiles.count - 1 { nextIndex = currentIndex + 1 }
-            default:
-                break
-            }
-
-            if let newIndex = nextIndex {
-                let nextFile = imageFiles[newIndex]
-                previewedImageFile = nextFile
-                selectedImageFileIDs = [nextFile.id]
-                lastSelectedImageFileID = nextFile.id
-                scrollToID = nextFile.id
-            }
-            return
-        }
-
-        let sortedFiles = imageFiles
-
-        guard let lastID = lastSelectedImageFileID,
-              let currentIndex = sortedFiles.firstIndex(where: { $0.id == lastID }) else {
-            if let firstFile = sortedFiles.first {
+        guard let currentFocusedID = focusedImageFileID,
+              let currentIndex = imageFiles.firstIndex(where: { $0.id == currentFocusedID }) else {
+            if let firstFile = imageFiles.first {
                 selectedImageFileIDs = [firstFile.id]
-                lastSelectedImageFileID = firstFile.id
+                self.focusedImageFileID = firstFile.id
                 scrollToID = firstFile.id
             }
             return
         }
 
-        var nextIndex: Int?
+        guard let nextIndex = nextImageIndex(from: currentIndex, direction: direction) else { return }
 
-        switch direction {
-        case .up:
-            if currentIndex >= gridColumnCount { nextIndex = currentIndex - gridColumnCount }
-        case .down:
-            if currentIndex + gridColumnCount < sortedFiles.count { nextIndex = currentIndex + gridColumnCount }
-        case .left:
-            if currentIndex > 0 { nextIndex = currentIndex - 1 }
-        case .right:
-            if currentIndex < sortedFiles.count - 1 { nextIndex = currentIndex + 1 }
+        let nextFile = imageFiles[nextIndex]
+        if isQuickPreviewPresented {
+            selectedImageFileIDs = [nextFile.id]
+        } else if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+            selectedImageFileIDs.insert(nextFile.id)
+        } else {
+            selectedImageFileIDs = [nextFile.id]
+        }
+        self.focusedImageFileID = nextFile.id
+        scrollToID = nextFile.id
+        PreviewImageCache.shared.preloadImage(for: nextFile.url)
+    }
+
+    private func nextImageIndex(from currentIndex: Int, direction: ArrowDirection) -> Int? {
+        ImageNavigation.nextIndex(
+            from: currentIndex,
+            itemCount: imageFiles.count,
+            direction: direction,
+            viewMode: viewMode,
+            gridColumnCount: gridColumnCount
+        )
+    }
+
+    private func toggleQuickPreview() {
+        if isQuickPreviewPresented {
+            dismissQuickPreview()
+            return
         }
 
-        if let newIndex = nextIndex {
-            let nextFile = sortedFiles[newIndex]
-            if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
-                selectedImageFileIDs.insert(nextFile.id)
-            } else {
-                selectedImageFileIDs = [nextFile.id]
-            }
-            lastSelectedImageFileID = nextFile.id
-            scrollToID = nextFile.id
+        guard let file = focusedImageFile,
+              selectedImageFileIDs.contains(file.id) else { return }
+
+        selectedImageFileIDs = [file.id]
+        isQuickPreviewPresented = true
+        PreviewImageCache.shared.preloadImage(for: file.url)
+    }
+
+    private func dismissQuickPreview() {
+        isQuickPreviewPresented = false
+        requestScrollToFocusedImage()
+    }
+
+    private func requestScrollToFocusedImage() {
+        guard let focusedImageFileID else { return }
+        DispatchQueue.main.async {
+            scrollToID = focusedImageFileID
         }
     }
 
@@ -489,7 +514,7 @@ struct ContentView: View {
         do {
             try FileManager.default.moveItem(at: oldURL, to: newURL)
             if let index = imageFiles.firstIndex(where: { $0.url == oldURL }) {
-                imageFiles[index] = ImageFile(url: newURL)
+                imageFiles[index] = ImageFile(id: imageFiles[index].id, url: newURL)
             }
             if let index = folderURLs.firstIndex(of: oldURL) {
                 folderURLs[index] = newURL

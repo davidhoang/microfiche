@@ -81,16 +81,31 @@ struct OptimizedAsyncImage: View {
 struct FileThumbnailView: View {
     let file: ImageFile
     let size: CGFloat
+    let aspectRatio: CGFloat
     let onRename: (URL, String) -> Void
 
+    init(
+        file: ImageFile,
+        size: CGFloat,
+        aspectRatio: CGFloat = 1,
+        onRename: @escaping (URL, String) -> Void
+    ) {
+        self.file = file
+        self.size = size
+        self.aspectRatio = aspectRatio
+        self.onRename = onRename
+    }
+
     var body: some View {
+        let height = size / aspectRatio
+
         ZStack {
             Color(NSColor.controlBackgroundColor)
 
             OptimizedAsyncImage(url: file.url, size: size)
-                .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .frame(width: size, height: height)
         }
-        .frame(width: size, height: size)
+        .frame(width: size, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }

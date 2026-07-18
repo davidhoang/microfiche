@@ -25,8 +25,8 @@ struct SidebarView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                SidebarSectionCard(
+            LazyVStack(alignment: .leading, spacing: 24) {
+                SidebarSection(
                     eyebrow: "Library",
                     title: "Folders",
                     detail: folderSectionDetail,
@@ -41,10 +41,7 @@ struct SidebarView: View {
                     )
 
                     if folderURLs.isEmpty {
-                        SidebarEmptyMessage(
-                            title: "No folders linked",
-                            message: "Use the plus button to add a folder and start browsing."
-                        )
+                        SidebarEmptyMessage("No folders linked. Add one to start browsing.")
                     } else {
                         ForEach(folderURLs, id: \.self) { url in
                             SidebarStaticRow(
@@ -62,9 +59,7 @@ struct SidebarView: View {
                     }
                 }
 
-                SidebarSectionDivider()
-
-                SidebarSectionCard(
+                SidebarSection(
                     eyebrow: "Collections",
                     title: "Contact Sheets",
                     detail: contactSheetSectionDetail,
@@ -72,10 +67,7 @@ struct SidebarView: View {
                     action: onCreateContactSheet
                 ) {
                     if contactSheets.isEmpty {
-                        SidebarEmptyMessage(
-                            title: "No contact sheets yet",
-                            message: "Create one to group a delivery set, moodboard, or review pass."
-                        )
+                        SidebarEmptyMessage("No contact sheets yet. Create one to collect a review set.")
                     } else {
                         ForEach(contactSheets) { sheet in
                             ContactSheetSidebarItem(
@@ -98,6 +90,7 @@ struct SidebarView: View {
                     }
                 }
             }
+            .padding(14)
             .background(sidebarSurface)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .padding(.horizontal, 12)
@@ -153,7 +146,7 @@ struct SidebarView: View {
 
 // MARK: - Shared Sidebar Components
 
-private struct SidebarSectionCard<Content: View>: View {
+private struct SidebarSection<Content: View>: View {
     let eyebrow: String
     let title: String
     let detail: String
@@ -178,7 +171,7 @@ private struct SidebarSectionCard<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(eyebrow.uppercased())
@@ -208,24 +201,10 @@ private struct SidebarSectionCard<Content: View>: View {
                     .help(actionHelp)
             }
 
-            Rectangle()
-                .fill(Color.white.opacity(0.32))
-                .frame(height: 1)
-
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
                 content
             }
         }
-        .padding(14)
-    }
-}
-
-private struct SidebarSectionDivider: View {
-    var body: some View {
-        Rectangle()
-            .fill(Color(NSColor.separatorColor).opacity(0.42))
-            .frame(height: 1)
-            .padding(.horizontal, 14)
     }
 }
 
@@ -258,8 +237,11 @@ private struct SidebarStaticRow: View {
     let action: () -> Void
 
     var body: some View {
-        SidebarRowSurface(isSelected: isSelected) {
-            SidebarSymbolBadge(systemImage: systemImage, isSelected: isSelected)
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                .frame(width: 24, height: 24)
 
             Text(title)
                 .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
@@ -268,43 +250,31 @@ private struct SidebarStaticRow: View {
 
             Spacer(minLength: 8)
         }
+        .sidebarRow(isSelected: isSelected)
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture(perform: action)
     }
 }
 
-private struct SidebarRowSurface<Content: View>: View {
+private struct SidebarRowModifier: ViewModifier {
     let isSelected: Bool
     let isDropTargeted: Bool
-    let content: Content
 
-    init(
-        isSelected: Bool,
-        isDropTargeted: Bool = false,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.isSelected = isSelected
-        self.isDropTargeted = isDropTargeted
-        self.content = content()
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            content
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(borderColor, lineWidth: isDropTargeted ? 2 : 1)
-        )
-        .animation(.easeInOut(duration: 0.18), value: isSelected)
-        .animation(.easeInOut(duration: 0.18), value: isDropTargeted)
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(borderColor, lineWidth: isDropTargeted ? 2 : 1)
+            )
+            .animation(.easeInOut(duration: 0.18), value: isSelected)
+            .animation(.easeInOut(duration: 0.18), value: isDropTargeted)
     }
 
     private var borderColor: Color {
@@ -320,61 +290,26 @@ private struct SidebarRowSurface<Content: View>: View {
     }
 }
 
-private struct SidebarSymbolBadge: View {
-    let systemImage: String
-    let isSelected: Bool
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.44))
-
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-        }
-        .frame(width: 28, height: 28)
-    }
-}
-
-private struct SidebarCountBadge: View {
-    let text: String
-    let isSelected: Bool
-
-    var body: some View {
-        Text(text)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.black.opacity(0.05))
-            )
+private extension View {
+    func sidebarRow(isSelected: Bool, isDropTargeted: Bool = false) -> some View {
+        modifier(SidebarRowModifier(isSelected: isSelected, isDropTargeted: isDropTargeted))
     }
 }
 
 private struct SidebarEmptyMessage: View {
-    let title: String
     let message: String
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.84))
+    init(_ message: String) {
+        self.message = message
+    }
 
-            Text(message)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.035))
-        )
+    var body: some View {
+        Text(message)
+            .font(.system(size: 12, weight: .regular))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
     }
 }
 
@@ -386,6 +321,7 @@ struct ContactSheetSidebarItem: View {
     @State private var isEditing: Bool = false
     @State private var editedName: String
     @State private var isDropTargeted: Bool = false
+    @FocusState private var isNameFocused: Bool
     let onSelect: () -> Void
     let onRename: (String) -> Void
     let onDelete: () -> Void
@@ -402,29 +338,51 @@ struct ContactSheetSidebarItem: View {
     }
 
     var body: some View {
-        SidebarRowSurface(isSelected: isSelected, isDropTargeted: isDropTargeted) {
-            SidebarSymbolBadge(systemImage: "square.grid.2x2", isSelected: isSelected)
+        HStack(spacing: 10) {
+            Image(systemName: "square.grid.2x2")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                .frame(width: 24, height: 24)
 
             if isEditing {
                 TextField("Name", text: $editedName, onCommit: commitRename)
                     .textFieldStyle(.roundedBorder)
+                    .focused($isNameFocused)
+                    .onChange(of: isNameFocused) { _, isFocused in
+                        if !isFocused {
+                            commitRename()
+                        }
+                    }
             } else {
                 Text(contactSheet.name)
                     .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
                     .foregroundStyle(.primary)
-                    .onTapGesture(count: 2) {
-                        isEditing = true
-                    }
+                    .highPriorityGesture(
+                        TapGesture(count: 1)
+                            .onEnded {
+                                if isSelected {
+                                    beginRenaming()
+                                } else {
+                                    onSelect()
+                                }
+                            }
+                    )
             }
 
             Spacer(minLength: 8)
 
-            SidebarCountBadge(
-                text: "\(contactSheet.imageIDs.count)",
-                isSelected: isSelected
-            )
+            Text("\(contactSheet.imageIDs.count)")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.black.opacity(0.05))
+                )
         }
+        .sidebarRow(isSelected: isSelected, isDropTargeted: isDropTargeted)
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture {
             if !isEditing {
@@ -437,7 +395,7 @@ struct ContactSheetSidebarItem: View {
         }
         .contextMenu {
             Button("Rename") {
-                isEditing = true
+                beginRenaming()
             }
             Button("Delete", role: .destructive) {
                 onDelete()
@@ -446,12 +404,22 @@ struct ContactSheetSidebarItem: View {
     }
 
     private func commitRename() {
+        guard isEditing else { return }
+
         let trimmedName = editedName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedName.isEmpty {
             editedName = trimmedName
             onRename(trimmedName)
         }
         isEditing = false
+    }
+
+    private func beginRenaming() {
+        editedName = contactSheet.name
+        isEditing = true
+        DispatchQueue.main.async {
+            isNameFocused = true
+        }
     }
 
     private func handleDrop(providers: [NSItemProvider]) {
@@ -472,6 +440,8 @@ struct ContactSheetSidebarItem: View {
 
                             if let url = urlData as? URL {
                                 fileURL = url
+                            } else if let url = urlData as? NSURL {
+                                fileURL = url as URL
                             } else if let data = urlData as? Data {
                                 fileURL = URL(dataRepresentation: data, relativeTo: nil)
                             } else if let path = urlData as? String {

@@ -36,36 +36,23 @@ extension View {
         }
     }
 
-    /// Content-layer selection — safe to use Liquid Glass over non-glass content.
+    /// A quiet content selection that remains distinct without framing the image heavily.
     @ViewBuilder
     func contentSelectionChrome(isSelected: Bool, cornerRadius: CGFloat = 10) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
         if isSelected {
-            if #available(macOS 26.0, *) {
-                self
-                    .padding(4)
-                    .background {
-                        shape
-                            .fill(.clear)
-                            .glassEffect(.regular.tint(.accentColor).interactive(), in: shape)
-                    }
-            } else {
-                self
-                    .padding(6)
-                    .background(Color(NSColor.controlBackgroundColor), in: shape)
-                    .overlay(shape.stroke(Color.accentColor, lineWidth: 3))
-                    .shadow(color: Color.accentColor.opacity(0.35), radius: 8)
-            }
+            self
+                .padding(4)
+                .background(Color.accentColor.opacity(0.12), in: shape)
+                .overlay {
+                    shape
+                        .inset(by: 0.75)
+                        .stroke(Color.accentColor.opacity(0.62), lineWidth: 1.5)
+                }
+                .shadow(color: Color.accentColor.opacity(0.12), radius: 6, y: 2)
         } else {
-            if #available(macOS 26.0, *) {
-                self.padding(4)
-            } else {
-                self
-                    .padding(6)
-                    .background(Color(NSColor.controlBackgroundColor), in: shape)
-                    .overlay(shape.stroke(Color(NSColor.separatorColor), lineWidth: 2))
-            }
+            self.padding(4)
         }
     }
 }

@@ -42,21 +42,35 @@ struct PreviewView: View {
                 .frame(width: geometry.size.width * 0.75, height: geometry.size.height * 0.75)
             }
         }
-        .onAppear {
-            loadPreviewImage()
+        .task(id: file.id) {
+            await loadPreviewImage()
         }
     }
 
-    private func loadPreviewImage() {
-        if let cached = PreviewImageCache.shared.getImage(for: file.url) {
-            self.previewImage = cached
-            self.isLoading = false
+    @MainActor
+    private func loadPreviewImage() async {
+        previewImage = nil
+        isLoading = true
+
+        guard !["pdf", "svg"].contains(file.url.pathExtension.lowercased()) else {
+            isLoading = false
             return
         }
 
-        PreviewImageCache.shared.preloadImage(for: file.url) { image in
-            self.previewImage = image
-            self.isLoading = false
+        if let cached = PreviewImageCache.shared.getImage(for: file.url) {
+            previewImage = cached
+            isLoading = false
+            return
         }
+
+        let loadedImage: NSImage? = await withCheckedContinuation { continuation in
+            PreviewImageCache.shared.preloadImage(for: file.url) { image in
+                continuation.resume(returning: image)
+            }
+        }
+
+        guard !Task.isCancelled else { return }
+        previewImage = loadedImage
+        isLoading = false
     }
 }

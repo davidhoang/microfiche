@@ -52,6 +52,62 @@ final class MicroficheTests: XCTestCase {
         wait(for: [expectation], timeout: 3.0)
     }
 
+    func testGridColumnCountUsesAvailableWidthAndHandlesZeroWidth() {
+        XCTAssertEqual(
+            ImageGridView.Layout.columnCount(availableWidth: 900, thumbnailWidth: 120),
+            6
+        )
+        XCTAssertEqual(
+            ImageGridView.Layout.columnCount(availableWidth: 0, thumbnailWidth: 120),
+            1
+        )
+    }
+
+    func testGridNavigationMovesByCurrentColumnCount() {
+        XCTAssertEqual(
+            ImageNavigation.nextIndex(
+                from: 7,
+                itemCount: 20,
+                direction: .up,
+                viewMode: .grid,
+                gridColumnCount: 4
+            ),
+            3
+        )
+        XCTAssertEqual(
+            ImageNavigation.nextIndex(
+                from: 7,
+                itemCount: 20,
+                direction: .down,
+                viewMode: .grid,
+                gridColumnCount: 4
+            ),
+            11
+        )
+    }
+
+    func testListNavigationMovesOneRowVertically() {
+        XCTAssertEqual(
+            ImageNavigation.nextIndex(
+                from: 7,
+                itemCount: 20,
+                direction: .up,
+                viewMode: .list,
+                gridColumnCount: 4
+            ),
+            6
+        )
+        XCTAssertNil(
+            ImageNavigation.nextIndex(
+                from: 0,
+                itemCount: 20,
+                direction: .up,
+                viewMode: .list,
+                gridColumnCount: 4
+            )
+        )
+    }
+
     func testPerformanceExample() throws {
         // This is an example of a performance test case.
         self.measure {
