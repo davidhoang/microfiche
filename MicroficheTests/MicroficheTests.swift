@@ -32,7 +32,7 @@ final class MicroficheTests: XCTestCase {
         XCTAssertEqual(thumbnail?.size.height, 40)
     }
 
-    func testImageCachePreloadPopulatesMemory() throws {
+    func testImageCacheLoadPopulatesMemory() throws {
         let pngData = Data(base64Encoded:
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
         )!
@@ -40,10 +40,11 @@ final class MicroficheTests: XCTestCase {
         try pngData.write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        let expectation = expectation(description: "preload completes")
-        ImageCache.shared.preloadImage(for: url, size: 40)
+        ImageCache.shared.clearCache()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        let expectation = expectation(description: "load completes")
+        ImageCache.shared.loadImage(for: url, size: 40) { image in
+            XCTAssertNotNil(image)
             XCTAssertNotNil(ImageCache.shared.getImage(for: url, size: 40))
             expectation.fulfill()
         }

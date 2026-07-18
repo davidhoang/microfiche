@@ -156,14 +156,12 @@ struct ImageDetailView: View {
                         SVGImageView(url: file.url)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .aspectRatio(contentMode: .fit)
-                    } else {
-                        if let image = detailImage {
-                            Image(nsImage: image)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                        } else if isLoadingImage {
-                            ProgressView()
-                        }
+                    } else if let image = detailImage {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                    } else if isLoadingImage {
+                        ProgressView()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -178,47 +176,49 @@ struct ImageDetailView: View {
                 LiquidGlassPanel(cornerRadius: 12) {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 24) {
-                        EditableChipSection(
-                            title: "Tags",
-                            itemName: "tag",
-                            items: $tags,
-                            isEditing: $isEditingTags,
-                            newItem: $newTag,
-                            chipColor: Color.accentColor.opacity(0.2),
-                            onSave: saveMetadata
-                        )
+                            EditableChipSection(
+                                title: "Tags",
+                                itemName: "tag",
+                                items: $tags,
+                                isEditing: $isEditingTags,
+                                newItem: $newTag,
+                                chipColor: Color.accentColor.opacity(0.2),
+                                onSave: saveMetadata
+                            )
 
-                        EditableChipSection(
-                            title: "Labels",
-                            itemName: "label",
-                            items: $labels,
-                            isEditing: $isEditingLabels,
-                            newItem: $newLabel,
-                            chipColor: Color.orange.opacity(0.2),
-                            onSave: saveMetadata
-                        )
+                            EditableChipSection(
+                                title: "Labels",
+                                itemName: "label",
+                                items: $labels,
+                                isEditing: $isEditingLabels,
+                                newItem: $newLabel,
+                                chipColor: Color.orange.opacity(0.2),
+                                onSave: saveMetadata
+                            )
 
-                        // Comments Section
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Comments")
-                                    .font(.headline)
-                                Spacer()
-                                Button(action: {
-                                    isEditingComments.toggle()
-                                    if !isEditingComments { saveMetadata() }
-                                }) {
-                                    Image(systemName: isEditingComments ? "checkmark" : "pencil")
+                            // Comments Section
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Comments")
+                                        .font(.headline)
+                                    Spacer()
+                                    Button(action: {
+                                        isEditingComments.toggle()
+                                        if !isEditingComments {
+                                            saveMetadata()
+                                        }
+                                    }) {
+                                        Image(systemName: isEditingComments ? "checkmark" : "pencil")
+                                    }
+                                    .buttonStyle(BorderlessButtonStyle())
                                 }
-                                .buttonStyle(BorderlessButtonStyle())
-                            }
-                            if isEditingComments {
-                                TextEditor(text: $comments)
-                                    .frame(minHeight: 100)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .onChange(of: comments) { saveMetadata() }
-                            } else {
-                                if comments.isEmpty {
+
+                                if isEditingComments {
+                                    TextEditor(text: $comments)
+                                        .frame(minHeight: 100)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        .onChange(of: comments) { saveMetadata() }
+                                } else if comments.isEmpty {
                                     Text("No comments")
                                         .foregroundColor(.secondary)
                                         .italic()
@@ -227,29 +227,30 @@ struct ImageDetailView: View {
                                         .textSelection(.enabled)
                                 }
                             }
-                        }
 
-                        // Where From Section
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Where From")
-                                    .font(.headline)
-                                Spacer()
-                                Button(action: {
-                                    isEditingWhereFrom.toggle()
-                                    if !isEditingWhereFrom { saveMetadata() }
-                                }) {
-                                    Image(systemName: isEditingWhereFrom ? "checkmark" : "pencil")
+                            // Where From Section
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Where From")
+                                        .font(.headline)
+                                    Spacer()
+                                    Button(action: {
+                                        isEditingWhereFrom.toggle()
+                                        if !isEditingWhereFrom {
+                                            saveMetadata()
+                                        }
+                                    }) {
+                                        Image(systemName: isEditingWhereFrom ? "checkmark" : "pencil")
+                                    }
+                                    .buttonStyle(BorderlessButtonStyle())
                                 }
-                                .buttonStyle(BorderlessButtonStyle())
-                            }
-                            if isEditingWhereFrom {
-                                TextField("Enter source", text: $whereFrom)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .onSubmit { saveMetadata() }
-                                    .onChange(of: whereFrom) { saveMetadata() }
-                            } else {
-                                if whereFrom.isEmpty {
+
+                                if isEditingWhereFrom {
+                                    TextField("Enter source", text: $whereFrom)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        .onSubmit { saveMetadata() }
+                                        .onChange(of: whereFrom) { saveMetadata() }
+                                } else if whereFrom.isEmpty {
                                     Text("No source specified")
                                         .foregroundColor(.secondary)
                                         .italic()
@@ -258,33 +259,33 @@ struct ImageDetailView: View {
                                         .textSelection(.enabled)
                                 }
                             }
-                        }
 
-                        // File Info Section
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("File Info")
-                                .font(.headline)
+                            // File Info Section
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("File Info")
+                                    .font(.headline)
 
-                            VStack(alignment: .leading, spacing: 4) {
-                                InfoRow(label: "Name", value: file.name)
-                                InfoRow(label: "Path", value: file.url.path)
-                                InfoRow(label: "Type", value: file.url.pathExtension.uppercased())
+                                VStack(alignment: .leading, spacing: 4) {
+                                    InfoRow(label: "Name", value: file.name)
+                                    InfoRow(label: "Path", value: file.url.path)
+                                    InfoRow(label: "Type", value: file.url.pathExtension.uppercased())
 
-                                if let fileSize = file.url.formattedFileSize() {
-                                    InfoRow(label: "Size", value: fileSize)
-                                }
+                                    if let fileSize = file.url.formattedFileSize() {
+                                        InfoRow(label: "Size", value: fileSize)
+                                    }
 
-                                if let creationDate = file.url.formattedCreationDate() {
-                                    InfoRow(label: "Created", value: creationDate)
-                                }
+                                    if let creationDate = file.url.formattedCreationDate() {
+                                        InfoRow(label: "Created", value: creationDate)
+                                    }
 
-                                if let modificationDate = file.url.formattedModificationDate() {
-                                    InfoRow(label: "Modified", value: modificationDate)
+                                    if let modificationDate = file.url.formattedModificationDate() {
+                                        InfoRow(label: "Modified", value: modificationDate)
+                                    }
                                 }
                             }
                         }
+                        .padding()
                     }
-                    .padding()
                 }
                 .frame(width: 300)
                 .padding(.trailing, 8)
@@ -298,6 +299,7 @@ struct ImageDetailView: View {
                     onBack()
                     return nil
                 }
+
                 return event
             }
         }
@@ -306,6 +308,7 @@ struct ImageDetailView: View {
                 NSEvent.removeMonitor(monitor)
                 escapeMonitor = nil
             }
+
             saveMetadata()
         }
     }

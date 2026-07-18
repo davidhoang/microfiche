@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import PDFKit
 
 // MARK: - Optimized Image Loading
 
@@ -19,45 +18,59 @@ struct OptimizedAsyncImage: View {
 
     var body: some View {
         Group {
-            if let image = image {
+            if let image {
                 Image(nsImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else if isLoading {
-                ProgressView()
-                    .scaleEffect(0.5)
+                    .interpolation(.medium)
+                    .aspectRatio(contentMode: .fit)
             } else if hasError {
                 Image(systemName: "photo")
                     .foregroundColor(.secondary)
                     .font(.system(size: size * 0.3))
             } else {
-                Color.gray.opacity(0.1)
+                thumbnailPlaceholder
             }
         }
-        .onAppear {
-            loadImage()
+        .task(id: cacheIdentity) {
+            await MainActor.run {
+                loadImage()
+            }
         }
+    }
+
+    private var cacheIdentity: String {
+        "\(url.path)|\(Int(size.rounded()))"
+    }
+
+    private var thumbnailPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Color.gray.opacity(isLoading ? 0.12 : 0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.28), lineWidth: 1)
+            )
     }
 
     private func loadImage() {
         if let cachedImage = ImageCache.shared.getImage(for: url, size: size) {
-            self.image = cachedImage
+            image = cachedImage
+            hasError = false
+            isLoading = false
             return
         }
+
+        guard !isLoading else { return }
 
         isLoading = true
         hasError = false
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            let image = ImageThumbnailGenerator.squareThumbnail(from: url, size: size)
-            DispatchQueue.main.async {
-                self.isLoading = false
-                if let image = image {
-                    self.image = image
-                    ImageCache.shared.setImage(image, for: url, size: size)
-                } else {
-                    self.hasError = true
-                }
+        ImageCache.shared.loadImage(for: url, size: size) { loadedImage in
+            isLoading = false
+
+            if let loadedImage {
+                image = loadedImage
+            } else {
+                hasError = true
             }
         }
     }
@@ -73,77 +86,11 @@ struct FileThumbnailView: View {
     var body: some View {
         ZStack {
             Color(NSColor.controlBackgroundColor)
-            Group {
-                if file.url.pathExtension.lowercased() == "pdf" {
-                    PDFThumbnailView(url: file.url, size: size)
-                        .aspectRatio(contentMode: .fit)
-                } else if file.url.pathExtension.lowercased() == "svg" {
-                    SVGThumbnailView(url: file.url)
-                        .aspectRatio(contentMode: .fit)
-                } else {
-                    OptimizedAsyncImage(url: file.url, size: size)
-                        .aspectRatio(contentMode: .fit)
-                }
-            }
-            .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            OptimizedAsyncImage(url: file.url, size: size)
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .frame(width: size, height: size)
-    }
-}
-
-// MARK: - PDF Thumbnail
-
-struct PDFThumbnailView: View {
-    let url: URL
-    let size: CGFloat
-    @State private var thumbnail: NSImage?
-
-    var body: some View {
-        Group {
-            if let image = thumbnail {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else {
-                Color.gray.opacity(0.1)
-            }
-        }
-        .onAppear(perform: generateThumbnail)
-    }
-
-    private func generateThumbnail() {
-        if let cachedImage = ImageCache.shared.getImage(for: url, size: size) {
-            self.thumbnail = cachedImage
-            return
-        }
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard let pdfDocument = PDFDocument(url: url),
-                  let page = pdfDocument.page(at: 0) else {
-                return
-            }
-            let image = page.thumbnail(of: .init(width: size * 2, height: size * 2), for: .cropBox)
-            DispatchQueue.main.async {
-                self.thumbnail = image
-                ImageCache.shared.setImage(image, for: url, size: size)
-            }
-        }
-    }
-}
-
-// MARK: - SVG Thumbnail
-
-struct SVGThumbnailView: View {
-    let url: URL
-
-    var body: some View {
-        if let image = NSImage(contentsOf: url) {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-        } else {
-            Color.gray.opacity(0.1)
-        }
     }
 }
