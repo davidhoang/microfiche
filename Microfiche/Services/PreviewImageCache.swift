@@ -56,9 +56,7 @@ final class PreviewImageCache {
             self.inFlight[key] = completion.map { [$0] } ?? []
 
             let queue = self.queue(for: priority)
-            queue.async { [weak self] in
-                guard let self = self else { return }
-
+            queue.async {
                 let image = autoreleasepool {
                     self.loadAndOptimizeImage(from: url)
                 }

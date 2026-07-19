@@ -86,7 +86,7 @@ struct ContentView: View {
     @State private var scrollToID: UUID?
     @State private var gridColumnCount: Int = 1
     @State private var detailViewFile: ImageFile?
-    @State private var isMetadataInspectorPresented = false
+    @State private var isMetadataInspectorPresented = true
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
     @State private var externalDriveNotice: String?
     @AppStorage("lastSelectedLibraryFolderID") private var lastSelectedLibraryFolderID = ""
@@ -133,16 +133,12 @@ struct ContentView: View {
                         max: SidebarLayout.maximumWidth
                     )
             } detail: {
-                if let detailFile = detailViewFile {
-                    ImageDetailView(
-                        file: detailFile,
-                        isInspectorPresented: $isMetadataInspectorPresented,
-                        onBack: closeImageDetail
-                    )
-                } else {
+                ZStack {
                     MainContentView(
                         imageFiles: imageFiles,
                         unavailableLocation: unavailableSelectedFolder,
+                        showsToolbar: detailViewFile == nil,
+                        isInspectorPresented: $isMetadataInspectorPresented,
                         viewMode: $viewMode,
                         gridThumbnailSize: $gridThumbnailSize,
                         gridColumnCount: $gridColumnCount,
@@ -154,6 +150,34 @@ struct ContentView: View {
                         contactSheets: contactSheetStorage.contactSheets,
                         onAddToContactSheet: handleAddToContactSheet
                     )
+                    .opacity(detailViewFile == nil ? 1 : 0)
+                    .allowsHitTesting(detailViewFile == nil)
+                    .accessibilityHidden(detailViewFile != nil)
+
+                    if let detailFile = detailViewFile {
+                        ImageDetailView(
+                            file: detailFile,
+                            isInspectorPresented: $isMetadataInspectorPresented,
+                            onBack: closeImageDetail
+                        )
+                        .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.16), value: detailViewFile?.id)
+                .inspector(isPresented: $isMetadataInspectorPresented) {
+                    Group {
+                        if let focusedImageFile {
+                            ImageMetadataInspectorView(file: focusedImageFile)
+                                .id(focusedImageFile.id)
+                        } else {
+                            ContentUnavailableView(
+                                "No Image Selected",
+                                systemImage: "info.circle",
+                                description: Text("Select an image to view its metadata.")
+                            )
+                        }
+                    }
+                    .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
                 }
             }
                 .navigationTitle("")
@@ -178,7 +202,6 @@ struct ContentView: View {
                     focusedImageFileID = nil
                     isQuickPreviewPresented = false
                     detailViewFile = nil
-                    isMetadataInspectorPresented = false
                 }
                 .onChange(of: libraryStorage.linkedFolders) {
                     reloadSelectedLibraryLocation()
@@ -252,7 +275,6 @@ struct ContentView: View {
                     .transition(.opacity)
                 }
         }
-        .animation(.easeOut(duration: 0.18), value: detailViewFile)
         .animation(.easeInOut(duration: 0.12), value: isQuickPreviewPresented)
         .task {
             restoreLibrarySelection()
@@ -431,7 +453,7 @@ struct ContentView: View {
             focusedImageFileID = fileID
             withAnimation(.easeOut(duration: 0.18)) {
                 detailViewFile = file
-                isMetadataInspectorPresented = true
+                isMetadataInspectorPresented = false
             }
         }
     }
@@ -439,7 +461,7 @@ struct ContentView: View {
     private func closeImageDetail() {
         withAnimation(.easeInOut(duration: 0.2)) {
             detailViewFile = nil
-            isMetadataInspectorPresented = false
+            isMetadataInspectorPresented = true
         }
         requestScrollToFocusedImage()
     }
@@ -486,7 +508,7 @@ struct ContentView: View {
                 scrollToID = nextFile.id
             } else {
                 detailViewFile = nil
-                isMetadataInspectorPresented = false
+                isMetadataInspectorPresented = true
                 selectedImageFileIDs = []
                 focusedImageFileID = nil
             }

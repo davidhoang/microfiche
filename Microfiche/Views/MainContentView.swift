@@ -13,6 +13,8 @@ import UniformTypeIdentifiers
 struct MainContentView: View {
     let imageFiles: [ImageFile]
     let unavailableLocation: LinkedLibraryFolder?
+    let showsToolbar: Bool
+    @Binding var isInspectorPresented: Bool
     @Binding var viewMode: ViewMode
     @Binding var gridThumbnailSize: CGFloat
     @Binding var gridColumnCount: Int
@@ -76,46 +78,52 @@ struct MainContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("View", selection: $viewMode) {
-                    ForEach(ViewMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
+        .overlay(alignment: .bottom) {
+            if showsToolbar {
+                FloatingViewModeControl(selection: $viewMode)
+                    .padding(.bottom, 18)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .hideSharedBackgroundIfAvailable()
+        }
+        .toolbar {
+            if showsToolbar {
+                if viewMode == .grid {
+                    ToolbarItem {
+                        HStack(spacing: 6) {
+                            Image(systemName: "photo")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
 
-            if viewMode == .grid {
-                ToolbarItem {
-                    HStack(spacing: 6) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            Slider(
+                                value: gridThumbnailSizeBinding,
+                                in: GridThumbnailSizing.minimum...GridThumbnailSizing.maximum,
+                                onEditingChanged: handleGridResize
+                            )
+                            .frame(width: 110)
+                            .accessibilityLabel("Thumbnail size")
+                            .accessibilityValue("\(Int(displayedGridThumbnailSize.rounded())) points")
 
-                        Slider(
-                            value: gridThumbnailSizeBinding,
-                            in: GridThumbnailSizing.minimum...GridThumbnailSizing.maximum,
-                            onEditingChanged: handleGridResize
-                        )
-                        .frame(width: 110)
-                        .accessibilityLabel("Thumbnail size")
-                        .accessibilityValue("\(Int(displayedGridThumbnailSize.rounded())) points")
-
-                        Image(systemName: "photo.fill")
-                            .font(.system(size: 15))
-                            .foregroundStyle(.secondary)
+                            Image(systemName: "photo.fill")
+                                .font(.system(size: 15))
+                                .foregroundStyle(.secondary)
+                        }
+                        .fixedSize()
+                        .help("Thumbnail Size")
                     }
-                    .fixedSize()
-                    .help("Thumbnail Size")
+                    .hideSharedBackgroundIfAvailable()
+                }
+
+                ToolbarItem {
+                    Button {
+                        isInspectorPresented.toggle()
+                    } label: {
+                        Image(systemName: "sidebar.right")
+                    }
+                    .help(isInspectorPresented ? "Hide Info" : "Show Info")
                 }
                 .hideSharedBackgroundIfAvailable()
             }
         }
-        .toolbarBackground(Color(NSColor.windowBackgroundColor), for: .windowToolbar)
-        .toolbarBackground(.visible, for: .windowToolbar)
     }
 
     private var gridThumbnailSizeBinding: Binding<CGFloat> {
@@ -177,6 +185,59 @@ struct MainContentView: View {
         }
     }
 
+}
+
+private struct FloatingViewModeControl: View {
+    @Binding var selection: ViewMode
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(ViewMode.allCases) { mode in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        selection = mode
+                    }
+                } label: {
+                    Text(mode.rawValue)
+                        .font(.system(size: 12, weight: selection == mode ? .semibold : .medium))
+                        .foregroundStyle(selection == mode ? .primary : .secondary)
+                        .frame(minWidth: 44)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .background {
+                    if selection == mode {
+                        Capsule()
+                            .fill(Color.primary.opacity(0.1))
+                    }
+                }
+                .accessibilityValue(selection == mode ? "Selected" : "")
+            }
+        }
+        .padding(4)
+        .floatingViewModeGlass()
+        .shadow(color: Color.black.opacity(0.12), radius: 12, y: 5)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("View mode")
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func floatingViewModeGlass() -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(.regular.interactive(), in: Capsule())
+        } else {
+            self
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
+                }
+        }
+    }
 }
 
 private struct EmptyLibraryStateView: View {

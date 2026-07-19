@@ -26,6 +26,7 @@ struct MicroficheApp: App {
         }
         .defaultSize(width: WindowLayout.defaultWidth, height: WindowLayout.defaultHeight)
         .defaultPosition(.center)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             CommandGroup(after: .newItem) {
                 Divider()

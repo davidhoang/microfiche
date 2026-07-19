@@ -63,9 +63,7 @@ final class ImageCache {
 
             self.inFlight[key] = [completion]
 
-            self.ioQueue.async { [weak self] in
-                guard let self = self else { return }
-
+            self.ioQueue.async {
                 let image = autoreleasepool {
                     self.loadImageFromDiskOrSource(for: url, size: size, key: key)
                 }

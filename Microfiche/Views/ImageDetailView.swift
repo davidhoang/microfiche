@@ -2,102 +2,19 @@
 //  ImageDetailView.swift
 //  Microfiche
 //
-//  Created by David Hoang on 6/8/25.
+//  Focused image canvas and the persistent library metadata inspector.
 //
 
-import SwiftUI
 import PDFKit
+import SwiftUI
 
-// MARK: - Reusable Chip Section
-
-struct EditableChipSection: View {
-    let title: String
-    let itemName: String
-    @Binding var items: [String]
-    @Binding var isEditing: Bool
-    @Binding var newItem: String
-    let chipColor: Color
-    let onSave: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title)
-                    .font(.headline)
-                Spacer()
-                Button(action: {
-                    isEditing.toggle()
-                    if !isEditing { onSave() }
-                }) {
-                    Image(systemName: isEditing ? "checkmark" : "plus")
-                }
-                .buttonStyle(BorderlessButtonStyle())
-            }
-
-            if isEditing {
-                HStack {
-                    TextField("Add \(itemName)", text: $newItem)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                    Button("Add") {
-                        if !newItem.isEmpty && !items.contains(newItem) {
-                            items.append(newItem)
-                            newItem = ""
-                            onSave()
-                        }
-                    }
-                    .buttonStyle(BorderlessButtonStyle())
-                }
-            }
-
-            if items.isEmpty {
-                Text("No \(title.lowercased())")
-                    .foregroundColor(.secondary)
-                    .italic()
-            } else {
-                LazyVGrid(columns: Array(repeating: .init(.flexible()), count: 2), spacing: 8) {
-                    ForEach(items, id: \.self) { item in
-                        HStack {
-                            Text(item)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(chipColor)
-                                .cornerRadius(8)
-                            Spacer()
-                            if isEditing {
-                                Button(action: {
-                                    items.removeAll { $0 == item }
-                                    onSave()
-                                }) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.red)
-                                }
-                                .buttonStyle(BorderlessButtonStyle())
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Image Detail View
+// MARK: - Focused Image Canvas
 
 struct ImageDetailView: View {
     let file: ImageFile
     @Binding var isInspectorPresented: Bool
     let onBack: () -> Void
 
-    @State private var tags: [String] = []
-    @State private var labels: [String] = []
-    @State private var comments: String = ""
-    @State private var whereFrom: String = ""
-    @State private var isEditingTags = false
-    @State private var isEditingLabels = false
-    @State private var isEditingComments = false
-    @State private var isEditingWhereFrom = false
-    @State private var newTag: String = ""
-    @State private var newLabel: String = ""
     @State private var detailImage: NSImage?
     @State private var isLoadingImage = true
     @State private var imageRequestURL: URL?
@@ -157,20 +74,52 @@ struct ImageDetailView: View {
                 .help("More")
             }
         }
-        .inspector(isPresented: $isInspectorPresented) {
-            metadataInspector
-                .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
-        }
         .task(id: file.id) {
-            loadMetadata()
             loadDetailImage()
-        }
-        .onDisappear {
-            saveMetadata()
         }
     }
 
-    private var metadataInspector: some View {
+    private func loadDetailImage() {
+        detailImage = nil
+        isLoadingImage = true
+        imageRequestURL = file.url
+
+        guard !["pdf", "svg"].contains(file.url.pathExtension.lowercased()) else {
+            isLoadingImage = false
+            return
+        }
+
+        if let cached = PreviewImageCache.shared.getImage(for: file.url) {
+            detailImage = cached
+            isLoadingImage = false
+            return
+        }
+
+        let requestedURL = file.url
+        PreviewImageCache.shared.preloadImage(for: requestedURL) { image in
+            guard imageRequestURL == requestedURL else { return }
+            detailImage = image
+            isLoadingImage = false
+        }
+    }
+}
+// MARK: - Metadata Inspector
+
+struct ImageMetadataInspectorView: View {
+    let file: ImageFile
+
+    @State private var tags: [String] = []
+    @State private var labels: [String] = []
+    @State private var comments = ""
+    @State private var whereFrom = ""
+    @State private var isEditingTags = false
+    @State private var isEditingLabels = false
+    @State private var isEditingComments = false
+    @State private var isEditingWhereFrom = false
+    @State private var newTag = ""
+    @State private var newLabel = ""
+
+    var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 EditableChipSection(
@@ -233,6 +182,12 @@ struct ImageDetailView: View {
             .padding(20)
         }
         .background(Color(NSColor.windowBackgroundColor))
+        .task(id: file.id) {
+            loadMetadata()
+        }
+        .onDisappear {
+            saveMetadata()
+        }
     }
 
     @ViewBuilder
@@ -279,8 +234,6 @@ struct ImageDetailView: View {
         }
     }
 
-    // MARK: - Metadata
-
     private func loadMetadata() {
         tags = []
         labels = []
@@ -293,27 +246,24 @@ struct ImageDetailView: View {
 
         var loadedFromFileSystem = false
 
-        if let tagsData = try? file.url.extendedAttribute(forName: "com.microfiche.tags"),
-           let tagsString = String(data: tagsData, encoding: .utf8) {
-            tags = tagsString.components(separatedBy: ",").filter { !$0.isEmpty }
+        if let data = try? file.url.extendedAttribute(forName: "com.microfiche.tags"),
+           let string = String(data: data, encoding: .utf8) {
+            tags = string.components(separatedBy: ",").filter { !$0.isEmpty }
             loadedFromFileSystem = true
         }
-
-        if let labelsData = try? file.url.extendedAttribute(forName: "com.microfiche.labels"),
-           let labelsString = String(data: labelsData, encoding: .utf8) {
-            labels = labelsString.components(separatedBy: ",").filter { !$0.isEmpty }
+        if let data = try? file.url.extendedAttribute(forName: "com.microfiche.labels"),
+           let string = String(data: data, encoding: .utf8) {
+            labels = string.components(separatedBy: ",").filter { !$0.isEmpty }
             loadedFromFileSystem = true
         }
-
-        if let commentsData = try? file.url.extendedAttribute(forName: "com.microfiche.comments"),
-           let commentsString = String(data: commentsData, encoding: .utf8) {
-            comments = commentsString
+        if let data = try? file.url.extendedAttribute(forName: "com.microfiche.comments"),
+           let string = String(data: data, encoding: .utf8) {
+            comments = string
             loadedFromFileSystem = true
         }
-
-        if let whereFromData = try? file.url.extendedAttribute(forName: "com.microfiche.whereFrom"),
-           let whereFromString = String(data: whereFromData, encoding: .utf8) {
-            whereFrom = whereFromString
+        if let data = try? file.url.extendedAttribute(forName: "com.microfiche.whereFrom"),
+           let string = String(data: data, encoding: .utf8) {
+            whereFrom = string
             loadedFromFileSystem = true
         }
 
@@ -343,62 +293,109 @@ struct ImageDetailView: View {
             "comments": comments,
             "whereFrom": whereFrom
         ]
-
-        let key = "metadata_\(file.id.uuidString)"
-        UserDefaults.standard.set(metadata, forKey: key)
+        UserDefaults.standard.set(metadata, forKey: "metadata_\(file.id.uuidString)")
     }
 
     private func loadFromUserDefaults() {
-        let key = "metadata_\(file.id.uuidString)"
-        if let metadata = UserDefaults.standard.dictionary(forKey: key) {
-            tags = metadata["tags"] as? [String] ?? []
-            labels = metadata["labels"] as? [String] ?? []
-            comments = metadata["comments"] as? String ?? ""
-            whereFrom = metadata["whereFrom"] as? String ?? ""
-        }
-    }
+        guard let metadata = UserDefaults.standard.dictionary(
+            forKey: "metadata_\(file.id.uuidString)"
+        ) else { return }
 
-    private func loadDetailImage() {
-        detailImage = nil
-        isLoadingImage = true
-        imageRequestURL = file.url
-
-        guard !["pdf", "svg"].contains(file.url.pathExtension.lowercased()) else {
-            isLoadingImage = false
-            return
-        }
-
-        if let cached = PreviewImageCache.shared.getImage(for: file.url) {
-            detailImage = cached
-            isLoadingImage = false
-            return
-        }
-
-        let requestedURL = file.url
-        PreviewImageCache.shared.preloadImage(for: requestedURL) { image in
-            guard imageRequestURL == requestedURL else { return }
-            detailImage = image
-            isLoadingImage = false
-        }
+        tags = metadata["tags"] as? [String] ?? []
+        labels = metadata["labels"] as? [String] ?? []
+        comments = metadata["comments"] as? String ?? ""
+        whereFrom = metadata["whereFrom"] as? String ?? ""
     }
 }
 
-// MARK: - Info Row
+// MARK: - Shared Inspector Components
+
+struct EditableChipSection: View {
+    let title: String
+    let itemName: String
+    @Binding var items: [String]
+    @Binding var isEditing: Bool
+    @Binding var newItem: String
+    let chipColor: Color
+    let onSave: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                    .font(.headline)
+                Spacer()
+                Button {
+                    isEditing.toggle()
+                    if !isEditing { onSave() }
+                } label: {
+                    Image(systemName: isEditing ? "checkmark" : "plus")
+                }
+                .buttonStyle(.borderless)
+            }
+
+            if isEditing {
+                HStack {
+                    TextField("Add \(itemName)", text: $newItem)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Add") {
+                        let value = newItem.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !value.isEmpty && !items.contains(value) {
+                            items.append(value)
+                            newItem = ""
+                            onSave()
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+
+            if items.isEmpty {
+                Text("No \(title.lowercased())")
+                    .foregroundStyle(.secondary)
+                    .italic()
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 88))], spacing: 8) {
+                    ForEach(items, id: \.self) { item in
+                        HStack(spacing: 4) {
+                            Text(item)
+                                .lineLimit(1)
+                            Spacer(minLength: 2)
+                            if isEditing {
+                                Button {
+                                    items.removeAll { $0 == item }
+                                    onSave()
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(chipColor, in: RoundedRectangle(cornerRadius: 7))
+                    }
+                }
+            }
+        }
+    }
+}
 
 struct InfoRow: View {
     let label: String
     let value: String
 
     var body: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .top, spacing: 8) {
             Text(label)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 60, alignment: .leading)
             Text(value)
                 .font(.caption)
                 .textSelection(.enabled)
-            Spacer()
+            Spacer(minLength: 0)
         }
     }
 }
