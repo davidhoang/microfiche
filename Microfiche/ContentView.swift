@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 
 enum Selection: Hashable {
     case all
-    case folder(URL)
+    case folder(UUID)
     case contactSheet(UUID)
 }
 
@@ -68,9 +68,9 @@ struct ContentView: View {
         static let autoCollapseWidth: CGFloat = 220
     }
 
-    @State private var folderURLs: [URL] = []
     @State private var selection: Selection?
     @State private var imageFiles: [ImageFile] = []
+    @State private var libraryLoadGeneration = UUID()
     @State private var viewMode: ViewMode = .grid
     @State private var gridThumbnailSize: CGFloat = GridThumbnailSizing.defaultValue
     @State private var selectedImageFileIDs: Set<UUID> = []
@@ -83,6 +83,9 @@ struct ContentView: View {
     @State private var gridColumnCount: Int = 1
     @State private var detailViewFile: ImageFile?
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
+    @State private var externalDriveNotice: String?
+    @AppStorage("lastSelectedLibraryFolderID") private var lastSelectedLibraryFolderID = ""
+    @StateObject private var libraryStorage = LibraryStorage.shared
     @StateObject private var contactSheetStorage = ContactSheetStorage.shared
 
     let supportedExtensions = ["jpg", "jpeg", "png", "pdf", "svg", "gif", "tiff"]
@@ -102,7 +105,8 @@ struct ContentView: View {
             } else {
                 NavigationSplitView(columnVisibility: $splitViewVisibility) {
                     SidebarView(
-                        folderURLs: folderURLs,
+                        folders: libraryStorage.linkedFolders,
+                        externalVolumes: libraryStorage.rememberedExternalVolumes,
                         contactSheets: contactSheetStorage.contactSheets,
                         selection: selection,
                         onWidthChange: handleSidebarWidthChange,
@@ -111,6 +115,7 @@ struct ContentView: View {
                             selection = newSelection
                         },
                         onRemoveFolder: removeFolder,
+                        onForgetExternalVolume: libraryStorage.forgetExternalVolume,
                         onCreateContactSheet: {
                             let newSheet = contactSheetStorage.createContactSheet()
                             selection = .contactSheet(newSheet.id)
@@ -136,6 +141,7 @@ struct ContentView: View {
                 } detail: {
                     MainContentView(
                         imageFiles: imageFiles,
+                        unavailableLocation: unavailableSelectedFolder,
                         viewMode: $viewMode,
                         gridThumbnailSize: $gridThumbnailSize,
                         gridColumnCount: $gridColumnCount,
@@ -152,10 +158,14 @@ struct ContentView: View {
                 .onChange(of: selection) { _, newValue in
                     switch newValue {
                     case .all:
-                        loadImages(from: folderURLs)
-                    case .folder(let url):
-                        loadImages(from: [url])
+                        loadImages(from: libraryStorage.availableFolderURLs)
+                        lastSelectedLibraryFolderID = ""
+                    case .folder(let id):
+                        let urls = libraryStorage.folder(id: id)?.resolvedURL.map { [$0] } ?? []
+                        loadImages(from: urls)
+                        lastSelectedLibraryFolderID = id.uuidString
                     case .contactSheet(let id):
+                        libraryLoadGeneration = UUID()
                         imageFiles = contactSheetStorage.getImages(for: id)
                         let urls = imageFiles.map { $0.url }
                         PreviewImageCache.shared.preloadLibrary(urls: urls, priority: .utility)
@@ -165,6 +175,9 @@ struct ContentView: View {
                     selectedImageFileIDs = []
                     focusedImageFileID = nil
                     isQuickPreviewPresented = false
+                }
+                .onChange(of: libraryStorage.linkedFolders) {
+                    reloadSelectedLibraryLocation()
                 }
                 .onChange(of: viewMode) {
                     requestScrollToFocusedImage()
@@ -214,6 +227,17 @@ struct ContentView: View {
                         "Are you sure you want to move \(fileCount) items to the Trash?"
                     Text(messageText)
                 }
+                .alert(
+                    "External Drive Remembered",
+                    isPresented: Binding(
+                        get: { externalDriveNotice != nil },
+                        set: { if !$0 { externalDriveNotice = nil } }
+                    )
+                ) {
+                    Button("OK") { externalDriveNotice = nil }
+                } message: {
+                    Text(externalDriveNotice ?? "")
+                }
 
                 if isQuickPreviewPresented, let file = focusedImageFile {
                     PreviewView(file: file) {
@@ -225,11 +249,21 @@ struct ContentView: View {
         }
         .animation(.easeOut(duration: 0.18), value: detailViewFile)
         .animation(.easeInOut(duration: 0.12), value: isQuickPreviewPresented)
+        .task {
+            restoreLibrarySelection()
+        }
     }
 
     private var focusedImageFile: ImageFile? {
         guard let focusedImageFileID else { return nil }
         return imageFiles.first { $0.id == focusedImageFileID }
+    }
+
+    private var unavailableSelectedFolder: LinkedLibraryFolder? {
+        guard case .folder(let id) = selection,
+              let folder = libraryStorage.folder(id: id),
+              !folder.isAvailable else { return nil }
+        return folder
     }
 
     // MARK: - Folder Management
@@ -241,35 +275,53 @@ struct ContentView: View {
         openPanel.allowsMultipleSelection = true
 
         if openPanel.runModal() == .OK {
-            var added = false
-            for url in openPanel.urls {
-                if !folderURLs.contains(url) {
-                    folderURLs.append(url)
-                    added = true
-                }
+            let result = libraryStorage.addFolders(openPanel.urls)
+            if selection == nil, let firstFolder = result.folders.first {
+                selection = .folder(firstFolder.id)
             }
-            if selection == nil, let firstURL = openPanel.urls.first {
-                selection = .folder(firstURL)
-            }
-            if added {
-                loadImages(from: folderURLs)
+            if !result.newlyRememberedVolumes.isEmpty {
+                let names = result.newlyRememberedVolumes.map(\.name).joined(separator: ", ")
+                externalDriveNotice = "\(names) will stay in Locations when disconnected and reconnect automatically when available."
             }
         }
     }
 
-    private func removeFolder(_ url: URL) {
-        if let index = folderURLs.firstIndex(of: url) {
-            let wasSelected = (selection == .folder(url))
-            folderURLs.remove(at: index)
+    private func removeFolder(_ id: UUID) {
+        if let index = libraryStorage.linkedFolders.firstIndex(where: { $0.id == id }) {
+            let wasSelected = (selection == .folder(id))
+            libraryStorage.removeFolder(id: id)
 
             if wasSelected {
-                if !folderURLs.isEmpty {
-                    let newIndex = min(index, folderURLs.count - 1)
-                    selection = .folder(folderURLs[newIndex])
+                let remainingFolders = libraryStorage.linkedFolders
+                if !remainingFolders.isEmpty {
+                    let newIndex = min(index, remainingFolders.count - 1)
+                    selection = .folder(remainingFolders[newIndex].id)
                 } else {
                     selection = .all
                 }
             }
+        }
+    }
+
+    private func restoreLibrarySelection() {
+        guard selection == nil else { return }
+        if let id = UUID(uuidString: lastSelectedLibraryFolderID),
+           libraryStorage.folder(id: id) != nil {
+            selection = .folder(id)
+        } else if !libraryStorage.linkedFolders.isEmpty {
+            selection = .all
+        }
+    }
+
+    private func reloadSelectedLibraryLocation() {
+        switch selection {
+        case .all:
+            loadImages(from: libraryStorage.availableFolderURLs)
+        case .folder(let id):
+            let urls = libraryStorage.folder(id: id)?.resolvedURL.map { [$0] } ?? []
+            loadImages(from: urls)
+        case .contactSheet, .none:
+            break
         }
     }
 
@@ -308,6 +360,8 @@ struct ContentView: View {
     // MARK: - Image Loading
 
     private func loadImages(from folderURLs: [URL]) {
+        let generation = UUID()
+        libraryLoadGeneration = generation
         imageFiles = []
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -327,6 +381,7 @@ struct ContentView: View {
             newImageFiles.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
 
             DispatchQueue.main.async {
+                guard self.libraryLoadGeneration == generation else { return }
                 self.imageFiles = newImageFiles
                 let urls = newImageFiles.map { $0.url }
                 PreviewImageCache.shared.preloadLibrary(urls: urls, priority: .utility)
@@ -515,9 +570,6 @@ struct ContentView: View {
             try FileManager.default.moveItem(at: oldURL, to: newURL)
             if let index = imageFiles.firstIndex(where: { $0.url == oldURL }) {
                 imageFiles[index] = ImageFile(id: imageFiles[index].id, url: newURL)
-            }
-            if let index = folderURLs.firstIndex(of: oldURL) {
-                folderURLs[index] = newURL
             }
         } catch {
             print("Error renaming file: \(error)")

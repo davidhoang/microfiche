@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 
 struct MainContentView: View {
     let imageFiles: [ImageFile]
+    let unavailableLocation: LinkedLibraryFolder?
     @Binding var viewMode: ViewMode
     @Binding var gridThumbnailSize: CGFloat
     @Binding var gridColumnCount: Int
@@ -36,7 +37,7 @@ struct MainContentView: View {
                 VStack {
                     if imageFiles.isEmpty {
                         Spacer(minLength: 24)
-                        EmptyLibraryStateView()
+                        EmptyLibraryStateView(unavailableLocation: unavailableLocation)
                         Spacer(minLength: 24)
                     } else {
                         if viewMode == .grid {
@@ -147,6 +148,8 @@ struct MainContentView: View {
 }
 
 private struct EmptyLibraryStateView: View {
+    let unavailableLocation: LinkedLibraryFolder?
+
     var body: some View {
         VStack(spacing: 16) {
             ZStack {
@@ -154,21 +157,21 @@ private struct EmptyLibraryStateView: View {
                     .fill(Color.accentColor.opacity(0.1))
                     .frame(width: 96, height: 96)
 
-                Image(systemName: "photo.on.rectangle.angled")
+                Image(systemName: unavailableLocation == nil ? "photo.on.rectangle.angled" : "externaldrive.badge.xmark")
                     .font(.system(size: 38, weight: .medium))
                     .foregroundStyle(.secondary)
             }
 
             VStack(spacing: 8) {
-                Text("LIBRARY")
+                Text(unavailableLocation == nil ? "LIBRARY" : "LOCATION OFFLINE")
                     .font(.system(size: 10, weight: .medium))
                     .tracking(0.8)
                     .foregroundStyle(.tertiary)
 
-                Text("No images yet")
+                Text(unavailableLocation == nil ? "No images yet" : "Reconnect the drive")
                     .font(.system(size: 26, weight: .semibold))
 
-                Text("Link a folder or drop images into a contact sheet to start building a library.")
+                Text(emptyStateMessage)
                     .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -176,6 +179,15 @@ private struct EmptyLibraryStateView: View {
             }
         }
         .padding(.horizontal, 24)
+    }
+
+    private var emptyStateMessage: String {
+        guard let unavailableLocation else {
+            return "Link a folder or drop images into a contact sheet to start building a library."
+        }
+
+        let driveName = unavailableLocation.volumeName ?? unavailableLocation.name
+        return "Reconnect \(driveName) to restore \(unavailableLocation.name) automatically."
     }
 }
 

@@ -11,13 +11,15 @@ import UniformTypeIdentifiers
 // MARK: - Sidebar
 
 struct SidebarView: View {
-    let folderURLs: [URL]
+    let folders: [LinkedLibraryFolder]
+    let externalVolumes: [RememberedExternalVolume]
     let contactSheets: [ContactSheet]
     let selection: Selection?
     let onWidthChange: (CGFloat) -> Void
     let onLinkFolder: () -> Void
     let onSelect: (Selection) -> Void
-    let onRemoveFolder: (URL) -> Void
+    let onRemoveFolder: (UUID) -> Void
+    let onForgetExternalVolume: (String) -> Void
     let onCreateContactSheet: () -> Void
     let onRenameContactSheet: (UUID, String) -> Void
     let onDeleteContactSheet: (UUID) -> Void
@@ -40,21 +42,39 @@ struct SidebarView: View {
                         action: { onSelect(.all) }
                     )
 
-                    if folderURLs.isEmpty {
+                    if folders.isEmpty {
                         SidebarEmptyMessage("No folders linked. Add one to start browsing.")
                     } else {
-                        ForEach(folderURLs, id: \.self) { url in
+                        ForEach(folders) { folder in
                             SidebarStaticRow(
-                                title: url.lastPathComponent,
-                                systemImage: "folder",
-                                isSelected: selection == .folder(url),
-                                action: { onSelect(.folder(url)) }
+                                title: folder.name,
+                                subtitle: folderSubtitle(folder),
+                                systemImage: folder.isExternal ? "externaldrive" : "folder",
+                                isSelected: selection == .folder(folder.id),
+                                action: { onSelect(.folder(folder.id)) }
                             )
                             .contextMenu {
                                 Button("Remove Folder", role: .destructive) {
-                                    onRemoveFolder(url)
+                                    onRemoveFolder(folder.id)
                                 }
                             }
+                        }
+                    }
+                }
+
+                if !externalVolumes.isEmpty {
+                    SidebarSection(
+                        eyebrow: "Locations",
+                        title: "External Drives",
+                        detail: externalVolumeSectionDetail
+                    ) {
+                        ForEach(externalVolumes) { volume in
+                            SidebarLocationRow(volume: volume)
+                                .contextMenu {
+                                    Button("Forget Drive", role: .destructive) {
+                                        onForgetExternalVolume(volume.id)
+                                    }
+                                }
                         }
                     }
                 }
@@ -103,11 +123,27 @@ struct SidebarView: View {
     }
 
     private var folderSectionDetail: String {
-        if folderURLs.isEmpty {
+        if folders.isEmpty {
             return "Link folders once, then browse everything from one place."
         }
 
-        return "\(folderURLs.count) linked \(folderURLs.count == 1 ? "folder" : "folders")"
+        let offlineCount = folders.filter { !$0.isAvailable }.count
+        let linked = "\(folders.count) linked \(folders.count == 1 ? "folder" : "folders")"
+        return offlineCount == 0 ? linked : "\(linked) • \(offlineCount) offline"
+    }
+
+    private var externalVolumeSectionDetail: String {
+        let connectedCount = externalVolumes.filter(\.isConnected).count
+        return "\(connectedCount) connected • \(externalVolumes.count) remembered"
+    }
+
+    private func folderSubtitle(_ folder: LinkedLibraryFolder) -> String? {
+        if !folder.isAvailable {
+            return folder.isExternal
+                ? "\(folder.volumeName ?? "External drive") • Offline"
+                : "Unavailable"
+        }
+        return folder.isExternal ? folder.volumeName : nil
     }
 
     private var contactSheetSectionDetail: String {
@@ -150,16 +186,16 @@ private struct SidebarSection<Content: View>: View {
     let eyebrow: String
     let title: String
     let detail: String
-    let actionHelp: String
-    let action: () -> Void
+    let actionHelp: String?
+    let action: (() -> Void)?
     let content: Content
 
     init(
         eyebrow: String,
         title: String,
         detail: String,
-        actionHelp: String,
-        action: @escaping () -> Void,
+        actionHelp: String? = nil,
+        action: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.eyebrow = eyebrow
@@ -197,8 +233,10 @@ private struct SidebarSection<Content: View>: View {
 
                 Spacer(minLength: 12)
 
-                SidebarAddButton(action: action)
-                    .help(actionHelp)
+                if let action {
+                    SidebarAddButton(action: action)
+                        .help(actionHelp ?? "Add")
+                }
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -232,9 +270,24 @@ private struct SidebarAddButton: View {
 
 private struct SidebarStaticRow: View {
     let title: String
+    let subtitle: String?
     let systemImage: String
     let isSelected: Bool
     let action: () -> Void
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        systemImage: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.isSelected = isSelected
+        self.action = action
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -243,16 +296,54 @@ private struct SidebarStaticRow: View {
                 .foregroundStyle(isSelected ? Color.accentColor : .secondary)
                 .frame(width: 24, height: 24)
 
-            Text(title)
-                .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                .lineLimit(1)
-                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
 
             Spacer(minLength: 8)
         }
         .sidebarRow(isSelected: isSelected)
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture(perform: action)
+    }
+}
+
+private struct SidebarLocationRow: View {
+    let volume: RememberedExternalVolume
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: volume.isConnected ? "externaldrive.fill.badge.checkmark" : "externaldrive")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(volume.isConnected ? Color.green : .secondary)
+                .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(volume.name)
+                    .font(.system(size: 14, weight: .regular))
+                    .lineLimit(1)
+
+                Text(volume.isConnected ? "Connected" : "Offline • reconnect to browse")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

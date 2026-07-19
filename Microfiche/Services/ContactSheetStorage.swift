@@ -14,16 +14,18 @@ class ContactSheetStorage: ObservableObject {
     @Published private(set) var contactSheets: [ContactSheet] = []
     private var imageMap: [UUID: ContactSheetImage] = [:]
 
-    private let fileManager = FileManager.default
+    private let fileManager: FileManager
     private let baseDirectory: URL
     private let imagesDirectory: URL
     private let metadataURL: URL
     private let imageMapURL: URL
 
-    private init() {
+    init(baseDirectory customBaseDirectory: URL? = nil, fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+
         // Set up directories in Application Support
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        baseDirectory = appSupport.appendingPathComponent("Microfiche/ContactSheets")
+        baseDirectory = customBaseDirectory ?? appSupport.appendingPathComponent("Microfiche/ContactSheets")
         imagesDirectory = baseDirectory.appendingPathComponent("Images")
         metadataURL = baseDirectory.appendingPathComponent("metadata.json")
         imageMapURL = baseDirectory.appendingPathComponent("images.json")
@@ -178,21 +180,17 @@ class ContactSheetStorage: ObservableObject {
     // MARK: - Persistence
 
     func save() {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self = self else { return }
+        do {
+            // These files are small, and completing both writes before returning
+            // prevents a dropped image from being lost if the app closes shortly
+            // after the drop. It also keeps rapid consecutive drops in order.
+            let metadataData = try JSONEncoder().encode(contactSheets)
+            let imageMapData = try JSONEncoder().encode(Array(imageMap.values))
 
-            do {
-                // Save contact sheets metadata
-                let metadataData = try JSONEncoder().encode(self.contactSheets)
-                try metadataData.write(to: self.metadataURL, options: .atomic)
-
-                // Save image map
-                let imageMapData = try JSONEncoder().encode(Array(self.imageMap.values))
-                try imageMapData.write(to: self.imageMapURL, options: .atomic)
-
-            } catch {
-                print("Error saving contact sheet data: \(error)")
-            }
+            try metadataData.write(to: metadataURL, options: .atomic)
+            try imageMapData.write(to: imageMapURL, options: .atomic)
+        } catch {
+            print("Error saving contact sheet data: \(error)")
         }
     }
 
