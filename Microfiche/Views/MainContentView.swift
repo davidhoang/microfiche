@@ -24,6 +24,12 @@ struct MainContentView: View {
     let contactSheets: [ContactSheet]
     let onAddToContactSheet: (UUID, URL) -> Void
     @State private var isResizingGrid = false
+    /// Local size used while dragging so slider updates don't rebuild ContentView each tick.
+    @State private var liveGridThumbnailSize: CGFloat?
+
+    private var displayedGridThumbnailSize: CGFloat {
+        liveGridThumbnailSize ?? gridThumbnailSize
+    }
 
     var body: some View {
         ZStack {
@@ -46,7 +52,7 @@ struct MainContentView: View {
                                 selectedImageFileIDs: $selectedImageFileIDs,
                                 onSelectImage: onSelectImage,
                                 onDoubleClickImage: onDoubleClickImage,
-                                thumbnailSize: gridThumbnailSize,
+                                thumbnailSize: displayedGridThumbnailSize,
                                 isResizing: isResizingGrid,
                                 scrollToID: $scrollToID,
                                 columnCount: $gridColumnCount,
@@ -90,13 +96,13 @@ struct MainContentView: View {
                             .foregroundStyle(.secondary)
 
                         Slider(
-                            value: $gridThumbnailSize,
+                            value: gridThumbnailSizeBinding,
                             in: GridThumbnailSizing.minimum...GridThumbnailSizing.maximum,
                             onEditingChanged: handleGridResize
                         )
                         .frame(width: 110)
                         .accessibilityLabel("Thumbnail size")
-                        .accessibilityValue("\(Int(gridThumbnailSize.rounded())) points")
+                        .accessibilityValue("\(Int(displayedGridThumbnailSize.rounded())) points")
 
                         Image(systemName: "photo.fill")
                             .font(.system(size: 15))
@@ -110,6 +116,20 @@ struct MainContentView: View {
         }
         .toolbarBackground(Color(NSColor.windowBackgroundColor), for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
+    }
+
+    private var gridThumbnailSizeBinding: Binding<CGFloat> {
+        Binding(
+            get: { displayedGridThumbnailSize },
+            set: { newValue in
+                liveGridThumbnailSize = newValue
+                // Keep parent state frozen while dragging so ContentView doesn't
+                // rebuild on every slider tick. Non-drag updates write through.
+                if !isResizingGrid {
+                    gridThumbnailSize = newValue
+                }
+            }
+        )
     }
 
     private var mainCanvasBackground: some View {
@@ -136,9 +156,21 @@ struct MainContentView: View {
     }
 
     private func handleGridResize(_ isEditing: Bool) {
-        isResizingGrid = isEditing
+        if isEditing {
+            isResizingGrid = true
+            if liveGridThumbnailSize == nil {
+                liveGridThumbnailSize = gridThumbnailSize
+            }
+            return
+        }
 
-        if !isEditing, let selectedID = selectedImageFileIDs.first {
+        if let liveGridThumbnailSize {
+            gridThumbnailSize = liveGridThumbnailSize
+        }
+        liveGridThumbnailSize = nil
+        isResizingGrid = false
+
+        if let selectedID = selectedImageFileIDs.first {
             DispatchQueue.main.async {
                 scrollToID = selectedID
             }
@@ -244,6 +276,7 @@ struct ImageGridView: View {
                                 file: file,
                                 isSelected: selectedImageFileIDs.contains(file.id),
                                 size: thumbnailSize,
+                                isResizing: isResizing,
                                 aspectRatio: Layout.aspectRatio,
                                 onSelectImage: onSelectImage,
                                 onDoubleClickImage: onDoubleClickImage,
@@ -253,10 +286,11 @@ struct ImageGridView: View {
                             )
                             .id(file.id)
                             .onAppear {
+                                guard !isResizing else { return }
                                 ImagePrefetcher.prefetchNearby(
                                     for: file,
                                     in: imageFiles,
-                                    thumbnailSize: thumbnailSize
+                                    thumbnailSize: GridThumbnailSizing.decodeSize
                                 )
                             }
                         }
@@ -274,6 +308,11 @@ struct ImageGridView: View {
                 .onChange(of: thumbnailSize) {
                     updateColumnCount(for: geometry.size.width)
                 }
+                .onChange(of: isResizing) { _, resizing in
+                    if !resizing {
+                        updateColumnCount(for: geometry.size.width)
+                    }
+                }
                 .onChange(of: scrollToID) { _, newID in
                     if let id = newID {
                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -287,6 +326,7 @@ struct ImageGridView: View {
         .transaction { transaction in
             if isResizing {
                 transaction.animation = nil
+                transaction.disablesAnimations = true
             }
         }
         .animation(isResizing ? nil : .snappy(duration: 0.22), value: thumbnailSize)
@@ -294,6 +334,10 @@ struct ImageGridView: View {
 
     private func updateColumnCount(for width: CGFloat) {
         guard width > 0 else { return }
+        // Avoid pushing column-count changes into ContentView on every drag tick.
+        // Layout still uses the live thumbnail width locally via LazyVGrid columns.
+        guard !isResizing else { return }
+
         let count = Layout.columnCount(
             availableWidth: width,
             thumbnailWidth: thumbnailSize
@@ -310,6 +354,7 @@ struct GridCell: View {
     let file: ImageFile
     let isSelected: Bool
     let size: CGFloat
+    let isResizing: Bool
     let aspectRatio: CGFloat
     let onSelectImage: (UUID) -> Void
     let onDoubleClickImage: (UUID) -> Void
@@ -322,14 +367,25 @@ struct GridCell: View {
         FileThumbnailView(
             file: file,
             size: size,
+            decodeSize: GridThumbnailSizing.decodeSize,
             aspectRatio: aspectRatio,
+            isResizing: isResizing,
             onRename: onRename
         )
         .frame(width: size, height: size / aspectRatio)
         .contentSelectionChrome(isSelected: isSelected)
-        .contentHoverDynamics(isHovered: isHovered, isSelected: isSelected)
+        .contentHoverDynamics(
+            isHovered: isResizing ? false : isHovered,
+            isSelected: isSelected
+        )
         .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
+        .onHover { hovering in
+            guard !isResizing else {
+                isHovered = false
+                return
+            }
+            isHovered = hovering
+        }
         .onTapGesture(count: 2) { onDoubleClickImage(file.id) }
         .onTapGesture { onSelectImage(file.id) }
         .onDrag {

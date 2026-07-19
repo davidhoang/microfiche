@@ -63,6 +63,12 @@ final class MicroficheTests: XCTestCase {
         )
     }
 
+    func testGridThumbnailDecodeSizeIsStableAcrossSliderRange() {
+        XCTAssertEqual(GridThumbnailSizing.decodeSize, GridThumbnailSizing.maximum)
+        XCTAssertGreaterThanOrEqual(GridThumbnailSizing.decodeSize, GridThumbnailSizing.minimum)
+        XCTAssertGreaterThanOrEqual(GridThumbnailSizing.decodeSize, GridThumbnailSizing.defaultValue)
+    }
+
     func testGridNavigationMovesByCurrentColumnCount() {
         XCTAssertEqual(
             ImageNavigation.nextIndex(
