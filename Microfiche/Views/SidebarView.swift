@@ -27,7 +27,7 @@ struct SidebarView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 24) {
+            LazyVStack(alignment: .leading, spacing: 22) {
                 SidebarSection(
                     eyebrow: "Library",
                     title: "Folders",
@@ -110,11 +110,8 @@ struct SidebarView: View {
                     }
                 }
             }
-            .padding(14)
-            .background(sidebarSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .padding(.horizontal, 12)
-            .padding(.vertical, 14)
+            .padding(.vertical, 16)
         }
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -155,28 +152,8 @@ struct SidebarView: View {
     }
 
     private var sidebarBackground: some View {
-        LinearGradient(
-            colors: [
-                Color(NSColor.windowBackgroundColor),
-                Color(NSColor.windowBackgroundColor).opacity(0.97),
-                Color(NSColor.underPageBackgroundColor).opacity(0.28)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
-    private var sidebarSurface: some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color(NSColor.controlBackgroundColor).opacity(0.24))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
-            }
+        Color(NSColor.windowBackgroundColor)
+            .overlay(Color.primary.opacity(0.012))
     }
 }
 
@@ -207,26 +184,26 @@ private struct SidebarSection<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(eyebrow.uppercased())
-                        .font(.system(size: 10, weight: .medium))
-                        .tracking(0.8)
+                        .font(.system(size: 9, weight: .medium))
+                        .tracking(0.7)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .foregroundStyle(.secondary)
 
                     Text(title)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .lineLimit(2)
                         .minimumScaleFactor(0.85)
                         .foregroundStyle(.primary)
 
                     Text(detail)
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .layoutPriority(1)
@@ -239,7 +216,7 @@ private struct SidebarSection<Content: View>: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 content
             }
         }
@@ -252,16 +229,12 @@ private struct SidebarAddButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "plus")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.primary.opacity(0.82))
-                .frame(width: 30, height: 30)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
                 .background(
-                    Circle()
-                        .fill(Color.primary.opacity(0.055))
-                )
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.primary.opacity(0.045))
                 )
         }
         .buttonStyle(.plain)
@@ -274,6 +247,7 @@ private struct SidebarStaticRow: View {
     let systemImage: String
     let isSelected: Bool
     let action: () -> Void
+    @State private var isHovered = false
 
     init(
         title: String,
@@ -312,14 +286,16 @@ private struct SidebarStaticRow: View {
 
             Spacer(minLength: 8)
         }
-        .sidebarRow(isSelected: isSelected)
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .sidebarRow(isSelected: isSelected, isHovered: isHovered)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onHover { isHovered = $0 }
         .onTapGesture(perform: action)
     }
 }
 
 private struct SidebarLocationRow: View {
     let volume: RememberedExternalVolume
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -341,30 +317,32 @@ private struct SidebarLocationRow: View {
 
             Spacer(minLength: 8)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .sidebarRow(isSelected: false, isHovered: isHovered)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onHover { isHovered = $0 }
     }
 }
 
 private struct SidebarRowModifier: ViewModifier {
     let isSelected: Bool
+    let isHovered: Bool
     let isDropTargeted: Bool
 
     func body(content: Content) -> some View {
         content
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(rowBackground)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(borderColor, lineWidth: isDropTargeted ? 2 : 1)
             )
             .animation(.easeInOut(duration: 0.18), value: isSelected)
+            .animation(.easeOut(duration: 0.12), value: isHovered)
             .animation(.easeInOut(duration: 0.18), value: isDropTargeted)
     }
 
@@ -373,17 +351,33 @@ private struct SidebarRowModifier: ViewModifier {
             return Color.accentColor.opacity(0.82)
         }
 
-        if isSelected {
-            return Color.accentColor.opacity(0.35)
-        }
+        return Color.clear
+    }
 
+    private var rowBackground: Color {
+        if isSelected {
+            return Color.primary.opacity(0.075)
+        }
+        if isHovered {
+            return Color.primary.opacity(0.04)
+        }
         return Color.clear
     }
 }
 
 private extension View {
-    func sidebarRow(isSelected: Bool, isDropTargeted: Bool = false) -> some View {
-        modifier(SidebarRowModifier(isSelected: isSelected, isDropTargeted: isDropTargeted))
+    func sidebarRow(
+        isSelected: Bool,
+        isHovered: Bool = false,
+        isDropTargeted: Bool = false
+    ) -> some View {
+        modifier(
+            SidebarRowModifier(
+                isSelected: isSelected,
+                isHovered: isHovered,
+                isDropTargeted: isDropTargeted
+            )
+        )
     }
 }
 
@@ -400,7 +394,7 @@ private struct SidebarEmptyMessage: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
     }
 }
 
@@ -412,6 +406,7 @@ struct ContactSheetSidebarItem: View {
     @State private var isEditing: Bool = false
     @State private var editedName: String
     @State private var isDropTargeted: Bool = false
+    @State private var isHovered = false
     @FocusState private var isNameFocused: Bool
     let onSelect: () -> Void
     let onRename: (String) -> Void
@@ -473,8 +468,13 @@ struct ContactSheetSidebarItem: View {
                         .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.black.opacity(0.05))
                 )
         }
-        .sidebarRow(isSelected: isSelected, isDropTargeted: isDropTargeted)
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .sidebarRow(
+            isSelected: isSelected,
+            isHovered: isHovered,
+            isDropTargeted: isDropTargeted
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onHover { isHovered = $0 }
         .onTapGesture {
             if !isEditing {
                 onSelect()

@@ -82,6 +82,7 @@ struct ContentView: View {
     @State private var scrollToID: UUID?
     @State private var gridColumnCount: Int = 1
     @State private var detailViewFile: ImageFile?
+    @State private var isMetadataInspectorPresented = false
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
     @State private var externalDriveNotice: String?
     @AppStorage("lastSelectedLibraryFolderID") private var lastSelectedLibraryFolderID = ""
@@ -92,18 +93,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            if let detailFile = detailViewFile {
-                ImageDetailView(file: detailFile) {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        detailViewFile = nil
-                    }
-                }
-                .transition(.asymmetric(
-                    insertion: .move(edge: .trailing).combined(with: .opacity),
-                    removal: .move(edge: .trailing).combined(with: .opacity)
-                ))
-            } else {
-                NavigationSplitView(columnVisibility: $splitViewVisibility) {
+            NavigationSplitView(columnVisibility: $splitViewVisibility) {
                     SidebarView(
                         folders: libraryStorage.linkedFolders,
                         externalVolumes: libraryStorage.rememberedExternalVolumes,
@@ -138,7 +128,14 @@ struct ContentView: View {
                         ideal: SidebarLayout.idealWidth,
                         max: SidebarLayout.maximumWidth
                     )
-                } detail: {
+            } detail: {
+                if let detailFile = detailViewFile {
+                    ImageDetailView(
+                        file: detailFile,
+                        isInspectorPresented: $isMetadataInspectorPresented,
+                        onBack: closeImageDetail
+                    )
+                } else {
                     MainContentView(
                         imageFiles: imageFiles,
                         unavailableLocation: unavailableSelectedFolder,
@@ -154,6 +151,7 @@ struct ContentView: View {
                         onAddToContactSheet: handleAddToContactSheet
                     )
                 }
+            }
                 .navigationTitle("")
                 .onChange(of: selection) { _, newValue in
                     switch newValue {
@@ -175,6 +173,8 @@ struct ContentView: View {
                     selectedImageFileIDs = []
                     focusedImageFileID = nil
                     isQuickPreviewPresented = false
+                    detailViewFile = nil
+                    isMetadataInspectorPresented = false
                 }
                 .onChange(of: libraryStorage.linkedFolders) {
                     reloadSelectedLibraryLocation()
@@ -200,7 +200,9 @@ struct ContentView: View {
                         }
                     },
                     onEscapePressed: {
-                        if isQuickPreviewPresented {
+                        if detailViewFile != nil {
+                            closeImageDetail()
+                        } else if isQuickPreviewPresented {
                             dismissQuickPreview()
                         } else if !selectedImageFileIDs.isEmpty {
                             selectedImageFileIDs = []
@@ -245,7 +247,6 @@ struct ContentView: View {
                     }
                     .transition(.opacity)
                 }
-            }
         }
         .animation(.easeOut(duration: 0.18), value: detailViewFile)
         .animation(.easeInOut(duration: 0.12), value: isQuickPreviewPresented)
@@ -422,16 +423,32 @@ struct ContentView: View {
     private func handleDoubleClickImage(for fileID: UUID) {
         if let file = imageFiles.first(where: { $0.id == fileID }) {
             isQuickPreviewPresented = false
+            selectedImageFileIDs = [fileID]
+            focusedImageFileID = fileID
             withAnimation(.easeOut(duration: 0.18)) {
                 detailViewFile = file
+                isMetadataInspectorPresented = true
             }
         }
+    }
+
+    private func closeImageDetail() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            detailViewFile = nil
+            isMetadataInspectorPresented = false
+        }
+        requestScrollToFocusedImage()
     }
 
     // MARK: - Delete
 
     private func moveFilesToTrash(_ files: [ImageFile]) {
         let deletedIDs = Set(files.map { $0.id })
+        let deletedDetailIndex = detailViewFile.flatMap { detailFile in
+            deletedIDs.contains(detailFile.id)
+                ? imageFiles.firstIndex(where: { $0.id == detailFile.id })
+                : nil
+        }
         let wasPreviewedDeleted = isQuickPreviewPresented
             && focusedImageFileID.map(deletedIDs.contains) == true
         var previewIndex: Int? = nil
@@ -453,6 +470,23 @@ struct ContentView: View {
             } catch {
                 print("Error moving file to trash: \(error)")
             }
+        }
+
+        if let deletedDetailIndex {
+            let nextIndex = min(deletedDetailIndex, imageFiles.count - 1)
+            if imageFiles.indices.contains(nextIndex) {
+                let nextFile = imageFiles[nextIndex]
+                detailViewFile = nextFile
+                selectedImageFileIDs = [nextFile.id]
+                focusedImageFileID = nextFile.id
+                scrollToID = nextFile.id
+            } else {
+                detailViewFile = nil
+                isMetadataInspectorPresented = false
+                selectedImageFileIDs = []
+                focusedImageFileID = nil
+            }
+            return
         }
 
         if wasPreviewedDeleted {
@@ -514,7 +548,7 @@ struct ContentView: View {
         guard let nextIndex = nextImageIndex(from: currentIndex, direction: direction) else { return }
 
         let nextFile = imageFiles[nextIndex]
-        if isQuickPreviewPresented {
+        if isQuickPreviewPresented || detailViewFile != nil {
             selectedImageFileIDs = [nextFile.id]
         } else if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
             selectedImageFileIDs.insert(nextFile.id)
@@ -522,6 +556,9 @@ struct ContentView: View {
             selectedImageFileIDs = [nextFile.id]
         }
         self.focusedImageFileID = nextFile.id
+        if detailViewFile != nil {
+            detailViewFile = nextFile
+        }
         scrollToID = nextFile.id
         PreviewImageCache.shared.preloadImage(for: nextFile.url)
     }
@@ -537,6 +574,8 @@ struct ContentView: View {
     }
 
     private func toggleQuickPreview() {
+        guard detailViewFile == nil else { return }
+
         if isQuickPreviewPresented {
             dismissQuickPreview()
             return
@@ -570,6 +609,9 @@ struct ContentView: View {
             try FileManager.default.moveItem(at: oldURL, to: newURL)
             if let index = imageFiles.firstIndex(where: { $0.url == oldURL }) {
                 imageFiles[index] = ImageFile(id: imageFiles[index].id, url: newURL)
+                if detailViewFile?.id == imageFiles[index].id {
+                    detailViewFile = imageFiles[index]
+                }
             }
         } catch {
             print("Error renaming file: \(error)")
