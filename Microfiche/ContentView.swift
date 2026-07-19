@@ -77,6 +77,8 @@ struct ContentView: View {
     @State private var libraryLoadGeneration = UUID()
     @State private var viewMode: ViewMode = .grid
     @State private var gridThumbnailSize: CGFloat = GridThumbnailSizing.defaultValue
+    @State private var liveGridThumbnailSize: CGFloat?
+    @State private var isResizingGrid = false
     @State private var selectedImageFileIDs: Set<UUID> = []
     @State private var focusedImageFileID: UUID?
     @State private var showDeleteAlert: Bool = false
@@ -94,6 +96,10 @@ struct ContentView: View {
     @StateObject private var contactSheetStorage = ContactSheetStorage.shared
 
     let supportedExtensions = ["jpg", "jpeg", "png", "pdf", "svg", "gif", "tiff"]
+
+    private var displayedGridThumbnailSize: CGFloat {
+        liveGridThumbnailSize ?? gridThumbnailSize
+    }
 
     var body: some View {
         ZStack {
@@ -138,9 +144,9 @@ struct ContentView: View {
                         imageFiles: imageFiles,
                         unavailableLocation: unavailableSelectedFolder,
                         showsToolbar: detailViewFile == nil,
-                        isInspectorPresented: $isMetadataInspectorPresented,
                         viewMode: $viewMode,
-                        gridThumbnailSize: $gridThumbnailSize,
+                        gridThumbnailSize: displayedGridThumbnailSize,
+                        isResizingGrid: isResizingGrid,
                         gridColumnCount: $gridColumnCount,
                         selectedImageFileIDs: $selectedImageFileIDs,
                         onSelectImage: handleImageSelection,
@@ -177,10 +183,55 @@ struct ContentView: View {
                             )
                         }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .microficheSidebarChrome()
                     .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
                 }
             }
                 .navigationTitle("")
+                .toolbar {
+                    if detailViewFile == nil {
+                        ToolbarItem(placement: .principal) {
+                            if viewMode == .grid {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "photo")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+
+                                    Slider(
+                                        value: gridThumbnailSizeBinding,
+                                        in: GridThumbnailSizing.minimum...GridThumbnailSizing.maximum,
+                                        onEditingChanged: handleGridResize
+                                    )
+                                    .frame(width: 110)
+                                    .accessibilityLabel("Thumbnail size")
+                                    .accessibilityValue("\(Int(displayedGridThumbnailSize.rounded())) points")
+
+                                    Image(systemName: "photo.fill")
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .fixedSize()
+                                .help("Thumbnail Size")
+                            } else {
+                                Color.clear
+                                    .frame(width: 168, height: 1)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .hideSharedBackgroundIfAvailable()
+
+                        ToolbarItem {
+                            Button {
+                                isMetadataInspectorPresented.toggle()
+                            } label: {
+                                Image(systemName: "sidebar.right")
+                            }
+                            .help(isMetadataInspectorPresented ? "Hide Info" : "Show Info")
+                        }
+                        .hideSharedBackgroundIfAvailable()
+                    }
+                }
                 .onChange(of: selection) { _, newValue in
                     switch newValue {
                     case .all:
@@ -291,6 +342,35 @@ struct ContentView: View {
               let folder = libraryStorage.folder(id: id),
               !folder.isAvailable else { return nil }
         return folder
+    }
+
+    private var gridThumbnailSizeBinding: Binding<CGFloat> {
+        Binding(
+            get: { displayedGridThumbnailSize },
+            set: { newValue in
+                liveGridThumbnailSize = newValue
+                if !isResizingGrid {
+                    gridThumbnailSize = newValue
+                }
+            }
+        )
+    }
+
+    private func handleGridResize(_ isEditing: Bool) {
+        if isEditing {
+            isResizingGrid = true
+            if liveGridThumbnailSize == nil {
+                liveGridThumbnailSize = gridThumbnailSize
+            }
+            return
+        }
+
+        if let liveGridThumbnailSize {
+            gridThumbnailSize = liveGridThumbnailSize
+        }
+        liveGridThumbnailSize = nil
+        isResizingGrid = false
+        requestScrollToFocusedImage()
     }
 
     // MARK: - Folder Management

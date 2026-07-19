@@ -47,7 +47,7 @@ struct SidebarView: View {
                     } else {
                         ForEach(folders) { folder in
                             SidebarStaticRow(
-                                title: folder.name,
+                                title: folder.displayName,
                                 subtitle: folderSubtitle(folder),
                                 systemImage: folder.isExternal ? "externaldrive" : "folder",
                                 isSelected: selection == .folder(folder.id),
@@ -115,7 +115,6 @@ struct SidebarView: View {
         }
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(sidebarBackground)
         .background(WidthReader(onChange: onWidthChange))
     }
 
@@ -151,10 +150,6 @@ struct SidebarView: View {
         return "\(contactSheets.count) saved \(contactSheets.count == 1 ? "collection" : "collections")"
     }
 
-    private var sidebarBackground: some View {
-        Color(NSColor.windowBackgroundColor)
-            .overlay(Color.primary.opacity(0.012))
-    }
 }
 
 // MARK: - Shared Sidebar Components

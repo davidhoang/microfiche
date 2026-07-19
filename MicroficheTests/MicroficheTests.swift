@@ -186,6 +186,36 @@ final class MicroficheTests: XCTestCase {
         )
     }
 
+    func testICloudDriveRootUsesFriendlyDisplayName() {
+        let folder = LinkedLibraryFolder(
+            id: UUID(),
+            name: "com~apple~CloudDocs",
+            originalPath: "/Users/example/Library/Mobile Documents/com~apple~CloudDocs",
+            volumeIdentifier: nil,
+            volumeName: nil,
+            isExternal: false,
+            addedAt: .now,
+            resolvedURL: nil
+        )
+
+        XCTAssertEqual(folder.displayName, "iCloud Drive")
+    }
+
+    func testICloudDriveSubfolderUsesFolderName() {
+        let folder = LinkedLibraryFolder(
+            id: UUID(),
+            name: "Photos",
+            originalPath: "/Users/example/Library/Mobile Documents/com~apple~CloudDocs/Projects/Photos",
+            volumeIdentifier: nil,
+            volumeName: nil,
+            isExternal: false,
+            addedAt: .now,
+            resolvedURL: nil
+        )
+
+        XCTAssertEqual(folder.displayName, "Photos")
+    }
+
     func testDroppedImagePersistsWhenContactSheetStorageReloads() throws {
         let fileManager = FileManager.default
         let testDirectory = fileManager.temporaryDirectory

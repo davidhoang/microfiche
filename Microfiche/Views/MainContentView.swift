@@ -14,9 +14,9 @@ struct MainContentView: View {
     let imageFiles: [ImageFile]
     let unavailableLocation: LinkedLibraryFolder?
     let showsToolbar: Bool
-    @Binding var isInspectorPresented: Bool
     @Binding var viewMode: ViewMode
-    @Binding var gridThumbnailSize: CGFloat
+    let gridThumbnailSize: CGFloat
+    let isResizingGrid: Bool
     @Binding var gridColumnCount: Int
     @Binding var selectedImageFileIDs: Set<UUID>
     let onSelectImage: (UUID) -> Void
@@ -25,14 +25,6 @@ struct MainContentView: View {
     let onRename: (URL, String) -> Void
     let contactSheets: [ContactSheet]
     let onAddToContactSheet: (UUID, URL) -> Void
-    @State private var isResizingGrid = false
-    /// Local size used while dragging so slider updates don't rebuild ContentView each tick.
-    @State private var liveGridThumbnailSize: CGFloat?
-
-    private var displayedGridThumbnailSize: CGFloat {
-        liveGridThumbnailSize ?? gridThumbnailSize
-    }
-
     var body: some View {
         ZStack {
             mainCanvasBackground
@@ -54,7 +46,7 @@ struct MainContentView: View {
                                 selectedImageFileIDs: $selectedImageFileIDs,
                                 onSelectImage: onSelectImage,
                                 onDoubleClickImage: onDoubleClickImage,
-                                thumbnailSize: displayedGridThumbnailSize,
+                                thumbnailSize: gridThumbnailSize,
                                 isResizing: isResizingGrid,
                                 scrollToID: $scrollToID,
                                 columnCount: $gridColumnCount,
@@ -85,59 +77,6 @@ struct MainContentView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .toolbar {
-            if showsToolbar {
-                if viewMode == .grid {
-                    ToolbarItem {
-                        HStack(spacing: 6) {
-                            Image(systemName: "photo")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-
-                            Slider(
-                                value: gridThumbnailSizeBinding,
-                                in: GridThumbnailSizing.minimum...GridThumbnailSizing.maximum,
-                                onEditingChanged: handleGridResize
-                            )
-                            .frame(width: 110)
-                            .accessibilityLabel("Thumbnail size")
-                            .accessibilityValue("\(Int(displayedGridThumbnailSize.rounded())) points")
-
-                            Image(systemName: "photo.fill")
-                                .font(.system(size: 15))
-                                .foregroundStyle(.secondary)
-                        }
-                        .fixedSize()
-                        .help("Thumbnail Size")
-                    }
-                    .hideSharedBackgroundIfAvailable()
-                }
-
-                ToolbarItem {
-                    Button {
-                        isInspectorPresented.toggle()
-                    } label: {
-                        Image(systemName: "sidebar.right")
-                    }
-                    .help(isInspectorPresented ? "Hide Info" : "Show Info")
-                }
-                .hideSharedBackgroundIfAvailable()
-            }
-        }
-    }
-
-    private var gridThumbnailSizeBinding: Binding<CGFloat> {
-        Binding(
-            get: { displayedGridThumbnailSize },
-            set: { newValue in
-                liveGridThumbnailSize = newValue
-                // Keep parent state frozen while dragging so ContentView doesn't
-                // rebuild on every slider tick. Non-drag updates write through.
-                if !isResizingGrid {
-                    gridThumbnailSize = newValue
-                }
-            }
-        )
     }
 
     private var mainCanvasBackground: some View {
@@ -160,28 +99,6 @@ struct MainContentView: View {
             Rectangle()
                 .fill(Color.black.opacity(0.04))
                 .frame(width: 1)
-        }
-    }
-
-    private func handleGridResize(_ isEditing: Bool) {
-        if isEditing {
-            isResizingGrid = true
-            if liveGridThumbnailSize == nil {
-                liveGridThumbnailSize = gridThumbnailSize
-            }
-            return
-        }
-
-        if let liveGridThumbnailSize {
-            gridThumbnailSize = liveGridThumbnailSize
-        }
-        liveGridThumbnailSize = nil
-        isResizingGrid = false
-
-        if let selectedID = selectedImageFileIDs.first {
-            DispatchQueue.main.async {
-                scrollToID = selectedID
-            }
         }
     }
 

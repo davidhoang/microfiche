@@ -181,7 +181,6 @@ struct ImageMetadataInspectorView: View {
             }
             .padding(20)
         }
-        .background(Color(NSColor.windowBackgroundColor))
         .task(id: file.id) {
             loadMetadata()
         }

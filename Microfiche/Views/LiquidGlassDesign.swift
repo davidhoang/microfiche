@@ -141,7 +141,27 @@ struct LiquidGlassPanel<Content: View>: View {
 
 // MARK: - Navigation Chrome
 
+private struct SidebarMaterialBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let visualEffectView = NSVisualEffectView()
+        visualEffectView.material = .sidebar
+        visualEffectView.blendingMode = .behindWindow
+        visualEffectView.state = .active
+        return visualEffectView
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
 extension View {
+    /// Matches the system material used by a NavigationSplitView sidebar.
+    func microficheSidebarChrome() -> some View {
+        background {
+            SidebarMaterialBackground()
+                .ignoresSafeArea()
+        }
+    }
+
     /// Removes legacy toolbar backgrounds that interfere with the system scroll-edge glass effect.
     @ViewBuilder
     func microficheToolbarChrome() -> some View {
