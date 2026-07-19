@@ -26,6 +26,10 @@ enum GridThumbnailSizing {
     static let minimum: CGFloat = 80
     static let defaultValue: CGFloat = 120
     static let maximum: CGFloat = 180
+
+    /// Decode once at the largest grid size so the size slider only changes
+    /// layout frames and can scale already-resident bitmaps without reloading.
+    static var decodeSize: CGFloat { maximum }
 }
 
 enum ArrowDirection {
