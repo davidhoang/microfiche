@@ -12,17 +12,17 @@ struct ImageFile: Identifiable, Equatable, Hashable {
     let url: URL
     var name: String { url.lastPathComponent }
 
-    init(id: UUID = UUID(), url: URL) {
-        self.id = id
-        self.url = url
+    init(url: URL) {
+        let normalizedURL = url.standardizedFileURL
+        self.url = normalizedURL
+        self.id = ImageIdentity.stableID(for: normalizedURL)
     }
-    
+
     static func == (lhs: ImageFile, rhs: ImageFile) -> Bool {
-        lhs.id == rhs.id && lhs.url == rhs.url
+        lhs.id == rhs.id
     }
-    
+
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
-        hasher.combine(url)
     }
 }

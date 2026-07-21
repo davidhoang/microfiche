@@ -234,76 +234,28 @@ struct ImageMetadataInspectorView: View {
     }
 
     private func loadMetadata() {
-        tags = []
-        labels = []
-        comments = ""
-        whereFrom = ""
         isEditingTags = false
         isEditingLabels = false
         isEditingComments = false
         isEditingWhereFrom = false
 
-        var loadedFromFileSystem = false
-
-        if let data = try? file.url.extendedAttribute(forName: "com.microfiche.tags"),
-           let string = String(data: data, encoding: .utf8) {
-            tags = string.components(separatedBy: ",").filter { !$0.isEmpty }
-            loadedFromFileSystem = true
-        }
-        if let data = try? file.url.extendedAttribute(forName: "com.microfiche.labels"),
-           let string = String(data: data, encoding: .utf8) {
-            labels = string.components(separatedBy: ",").filter { !$0.isEmpty }
-            loadedFromFileSystem = true
-        }
-        if let data = try? file.url.extendedAttribute(forName: "com.microfiche.comments"),
-           let string = String(data: data, encoding: .utf8) {
-            comments = string
-            loadedFromFileSystem = true
-        }
-        if let data = try? file.url.extendedAttribute(forName: "com.microfiche.whereFrom"),
-           let string = String(data: data, encoding: .utf8) {
-            whereFrom = string
-            loadedFromFileSystem = true
-        }
-
-        if !loadedFromFileSystem {
-            loadFromUserDefaults()
-        }
+        let metadata = ImageMetadataStore.shared.metadata(for: file.url)
+        tags = metadata.tags
+        labels = metadata.labels
+        comments = metadata.comments
+        whereFrom = metadata.whereFrom
     }
 
     private func saveMetadata() {
-        guard FileManager.default.isWritableFile(atPath: file.url.path) else {
-            saveToUserDefaults()
-            return
-        }
-
-        do {
-            try file.url.setFinderComment(comments)
-            try file.url.setFinderTagsAndLabels(tags: tags, labels: labels)
-        } catch {
-            saveToUserDefaults()
-        }
-    }
-
-    private func saveToUserDefaults() {
-        let metadata: [String: Any] = [
-            "tags": tags,
-            "labels": labels,
-            "comments": comments,
-            "whereFrom": whereFrom
-        ]
-        UserDefaults.standard.set(metadata, forKey: "metadata_\(file.id.uuidString)")
-    }
-
-    private func loadFromUserDefaults() {
-        guard let metadata = UserDefaults.standard.dictionary(
-            forKey: "metadata_\(file.id.uuidString)"
-        ) else { return }
-
-        tags = metadata["tags"] as? [String] ?? []
-        labels = metadata["labels"] as? [String] ?? []
-        comments = metadata["comments"] as? String ?? ""
-        whereFrom = metadata["whereFrom"] as? String ?? ""
+        ImageMetadataStore.shared.save(
+            ImageMetadata(
+                tags: tags,
+                labels: labels,
+                comments: comments,
+                whereFrom: whereFrom
+            ),
+            for: file.url
+        )
     }
 }
 

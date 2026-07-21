@@ -568,15 +568,18 @@ struct ContentView: View {
             .compactMap { file in originalFilesSnapshot.firstIndex(of: file) }
             .min()
 
+        var trashedURLs: [URL] = []
         for file in files {
             do {
                 try FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
                 imageFiles.removeAll { $0.id == file.id }
                 selectedImageFileIDs.remove(file.id)
+                trashedURLs.append(file.url)
             } catch {
                 print("Error moving file to trash: \(error)")
             }
         }
+        ImageMetadataStore.shared.remove(for: trashedURLs)
 
         if let deletedDetailIndex {
             let nextIndex = min(deletedDetailIndex, imageFiles.count - 1)
@@ -713,10 +716,24 @@ struct ContentView: View {
         let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
         do {
             try FileManager.default.moveItem(at: oldURL, to: newURL)
+            ImageMetadataStore.shared.move(from: oldURL, to: newURL)
+
             if let index = imageFiles.firstIndex(where: { $0.url == oldURL }) {
-                imageFiles[index] = ImageFile(id: imageFiles[index].id, url: newURL)
-                if detailViewFile?.id == imageFiles[index].id {
-                    detailViewFile = imageFiles[index]
+                let oldID = imageFiles[index].id
+                let renamedFile = ImageFile(url: newURL)
+                imageFiles[index] = renamedFile
+
+                if selectedImageFileIDs.remove(oldID) != nil {
+                    selectedImageFileIDs.insert(renamedFile.id)
+                }
+                if focusedImageFileID == oldID {
+                    focusedImageFileID = renamedFile.id
+                }
+                if scrollToID == oldID {
+                    scrollToID = renamedFile.id
+                }
+                if detailViewFile?.id == oldID {
+                    detailViewFile = renamedFile
                 }
             }
         } catch {

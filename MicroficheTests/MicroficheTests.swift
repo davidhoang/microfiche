@@ -238,6 +238,102 @@ final class MicroficheTests: XCTestCase {
         XCTAssertEqual(reloadedStorage.getImages(for: sheet.id).count, 1)
     }
 
+    func testImageFileIdentityIsStableAcrossRescans() {
+        let url = URL(fileURLWithPath: "/Users/example/Pictures/sunset.jpg")
+        let first = ImageFile(url: url)
+        let second = ImageFile(url: url)
+
+        XCTAssertEqual(first.id, second.id)
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(
+            first.id,
+            ImageIdentity.stableID(for: url.standardizedFileURL)
+        )
+    }
+
+    func testImageFileIdentityIgnoresRedundantPathComponents() {
+        let plain = ImageFile(url: URL(fileURLWithPath: "/Users/example/Pictures/photo.png"))
+        let withDot = ImageFile(
+            url: URL(fileURLWithPath: "/Users/example/Pictures/./photo.png")
+        )
+
+        XCTAssertEqual(plain.id, withDot.id)
+    }
+
+    @MainActor
+    func testImageMetadataStorePersistsAcrossReloads() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("microfiche-metadata-\(UUID().uuidString)", isDirectory: true)
+        let persistenceURL = root.appendingPathComponent("image-metadata.json")
+        let imageURL = URL(fileURLWithPath: "/Users/example/Pictures/catalog/frame-01.tif")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = ImageMetadataStore(persistenceURL: persistenceURL)
+        store.save(
+            ImageMetadata(
+                tags: ["keeper", "portrait"],
+                labels: ["Red"],
+                comments: "Looks good",
+                whereFrom: "Studio session"
+            ),
+            for: imageURL
+        )
+
+        let reloaded = ImageMetadataStore(persistenceURL: persistenceURL)
+        let metadata = reloaded.metadata(for: imageURL)
+        XCTAssertEqual(metadata.tags, ["keeper", "portrait"])
+        XCTAssertEqual(metadata.labels, ["Red"])
+        XCTAssertEqual(metadata.comments, "Looks good")
+        XCTAssertEqual(metadata.whereFrom, "Studio session")
+    }
+
+    @MainActor
+    func testImageMetadataStoreMovesRecordsOnRename() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("microfiche-metadata-move-\(UUID().uuidString)", isDirectory: true)
+        let persistenceURL = root.appendingPathComponent("image-metadata.json")
+        let oldURL = URL(fileURLWithPath: "/Users/example/Pictures/old-name.jpg")
+        let newURL = URL(fileURLWithPath: "/Users/example/Pictures/new-name.jpg")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = ImageMetadataStore(persistenceURL: persistenceURL)
+        store.save(
+            ImageMetadata(tags: ["archive"], labels: [], comments: "Keep", whereFrom: ""),
+            for: oldURL
+        )
+        store.move(from: oldURL, to: newURL)
+
+        XCTAssertTrue(store.metadata(for: oldURL).isEmpty)
+        XCTAssertEqual(store.metadata(for: newURL).tags, ["archive"])
+        XCTAssertEqual(store.metadata(for: newURL).comments, "Keep")
+    }
+
+    @MainActor
+    func testImageMetadataStoreRemovesEmptyRecords() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("microfiche-metadata-empty-\(UUID().uuidString)", isDirectory: true)
+        let persistenceURL = root.appendingPathComponent("image-metadata.json")
+        let imageURL = URL(fileURLWithPath: "/Users/example/Pictures/empty.jpg")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = ImageMetadataStore(persistenceURL: persistenceURL)
+        store.save(
+            ImageMetadata(tags: ["temp"], labels: [], comments: "", whereFrom: ""),
+            for: imageURL
+        )
+        store.save(.empty, for: imageURL)
+
+        let reloaded = ImageMetadataStore(persistenceURL: persistenceURL)
+        XCTAssertTrue(reloaded.metadata(for: imageURL).isEmpty)
+
+        let data = try Data(contentsOf: persistenceURL)
+        let decoded = try JSONDecoder().decode([String: ImageMetadata].self, from: data)
+        XCTAssertTrue(decoded.isEmpty)
+    }
+
     func testPerformanceExample() throws {
         // This is an example of a performance test case.
         self.measure {
