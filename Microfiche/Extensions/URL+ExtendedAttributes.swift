@@ -72,20 +72,3 @@ extension URL {
         }
     }
 }
-
-extension URL {
-    func setFinderComment(_ comment: String) throws {
-        let key = "com.apple.metadata:kMDItemFinderComment"
-        let plist = try PropertyListSerialization.data(fromPropertyList: comment, format: .binary, options: 0)
-        try self.setExtendedAttribute(plist, forName: key)
-    }
-    
-    func setFinderTagsAndLabels(tags: [String], labels: [String]) throws {
-        let key = "com.apple.metadata:_kMDItemUserTags"
-        // Finder color tags are just special strings (e.g., 'Red', 'Orange', etc.)
-        // We'll append them to the tags array
-        let allTags = tags + labels
-        let plist = try PropertyListSerialization.data(fromPropertyList: allTags, format: .binary, options: 0)
-        try self.setExtendedAttribute(plist, forName: key)
-    }
-}
