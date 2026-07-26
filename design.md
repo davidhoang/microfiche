@@ -208,6 +208,12 @@ Disable animations while the grid size slider is dragging. Prefer `MicroficheMot
 - **Files:** `Microfiche/Views/ImageDetailView.swift`, `PreviewView.swift`
 - **Native metadata:** `NativeFileMetadataService` + `FinderLabel` read/write Finder color labels, tags, and comments; inspector `FinderLabelPicker` is the primary label UI.
 
+### Welcome onboarding
+- **Files:** `Microfiche/Views/OnboardingView.swift`, `SettingsView.swift`, `Services/UserPreferences.swift`
+- Full-window dimmed overlay + `LiquidGlassPanel` (same modal pattern as quick preview).
+- Shows once until completed/skipped when **Settings → Onboarding → Show welcome onboarding** is on.
+- Testing: toggle the setting off to suppress; use **Replay Onboarding** or **Help → Replay Welcome Onboarding** to walk through again.
+
 ---
 
 ## Future Enhancements

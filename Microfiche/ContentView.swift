@@ -94,6 +94,7 @@ struct ContentView: View {
     @AppStorage("lastSelectedLibraryFolderID") private var lastSelectedLibraryFolderID = ""
     @StateObject private var libraryStorage = LibraryStorage.shared
     @StateObject private var contactSheetStorage = ContactSheetStorage.shared
+    @StateObject private var userPreferences = UserPreferences.shared
 
     let supportedExtensions = ["jpg", "jpeg", "png", "pdf", "svg", "gif", "tiff"]
 
@@ -267,6 +268,7 @@ struct ContentView: View {
                 }
                 .background(KeyboardEventHandlingView(
                     onDeletePressed: { bypassConfirmation in
+                        guard !userPreferences.isPresentingOnboarding else { return }
                         let filesToDelete = imageFiles.filter { selectedImageFileIDs.contains($0.id) }
                         if !filesToDelete.isEmpty {
                             if bypassConfirmation || dontAskAgain {
@@ -278,7 +280,9 @@ struct ContentView: View {
                         }
                     },
                     onEscapePressed: {
-                        if detailViewFile != nil {
+                        if userPreferences.isPresentingOnboarding {
+                            userPreferences.completeOnboarding()
+                        } else if detailViewFile != nil {
                             closeImageDetail()
                         } else if isQuickPreviewPresented {
                             dismissQuickPreview()
@@ -287,8 +291,14 @@ struct ContentView: View {
                             focusedImageFileID = nil
                         }
                     },
-                    onSpacebarPressed: toggleQuickPreview,
-                    onArrowPressed: handleArrowKey
+                    onSpacebarPressed: {
+                        guard !userPreferences.isPresentingOnboarding else { return }
+                        toggleQuickPreview()
+                    },
+                    onArrowPressed: { direction in
+                        guard !userPreferences.isPresentingOnboarding else { return }
+                        handleArrowKey(direction)
+                    }
                 ))
                 .alert("Move to Trash?", isPresented: $showDeleteAlert) {
                     Button("Move to Trash", role: .destructive) {
@@ -325,10 +335,23 @@ struct ContentView: View {
                     }
                     .transition(.opacity)
                 }
+
+                if userPreferences.isPresentingOnboarding {
+                    OnboardingView(
+                        onLinkFolder: linkFolder,
+                        onFinished: {
+                            userPreferences.completeOnboarding()
+                        }
+                    )
+                    .transition(.opacity)
+                    .zIndex(10)
+                }
         }
         .animation(MicroficheMotion.snap, value: isQuickPreviewPresented)
+        .animation(MicroficheMotion.transition, value: userPreferences.isPresentingOnboarding)
         .task {
             restoreLibrarySelection()
+            userPreferences.evaluateLaunchPresentation()
         }
     }
 
