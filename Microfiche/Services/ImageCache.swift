@@ -21,6 +21,7 @@ final class ImageCache {
     private let stateQueue = DispatchQueue(label: "com.microfiche.thumbnailcache.state")
     private let ioQueue = DispatchQueue(label: "com.microfiche.thumbnailcache.io", qos: .utility, attributes: .concurrent)
     private var inFlight: [String: [Completion]] = [:]
+    private var memoryKeysByPathKey: [String: Set<String>] = [:]
 
     private init() {
         let cachesDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
@@ -35,6 +36,7 @@ final class ImageCache {
         cache.removeAllObjects()
         stateQueue.sync {
             inFlight.removeAll()
+            memoryKeysByPathKey.removeAll()
         }
         try? fileManager.removeItem(at: cacheDirectory)
         try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
@@ -85,10 +87,22 @@ final class ImageCache {
     }
 
     func clearCacheForFile(at url: URL) {
-        let baseKey = String(url.path.hash)
+        let pathKey = ImageIdentity.cacheKey(for: url)
+
+        let memoryKeys = stateQueue.sync { () -> Set<String> in
+            let keys = memoryKeysByPathKey.removeValue(forKey: pathKey) ?? []
+            for key in keys {
+                inFlight.removeValue(forKey: key)
+            }
+            return keys
+        }
+
+        for key in memoryKeys {
+            cache.removeObject(forKey: key as NSString)
+        }
 
         if let contents = try? fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil) {
-            for file in contents where file.deletingPathExtension().lastPathComponent.hasPrefix(baseKey) {
+            for file in contents where file.deletingPathExtension().lastPathComponent.hasPrefix(pathKey) {
                 try? fileManager.removeItem(at: file)
             }
         }
@@ -96,7 +110,7 @@ final class ImageCache {
 
     private func loadImageFromDiskOrSource(for url: URL, size: CGFloat, key: String) -> NSImage? {
         if let diskImage = loadImageFromDisk(for: url, key: key) {
-            cache.setObject(diskImage, forKey: key as NSString, cost: cacheCost(for: diskImage))
+            storeInMemory(diskImage, for: url, key: key)
             return diskImage
         }
 
@@ -104,9 +118,20 @@ final class ImageCache {
             return nil
         }
 
-        cache.setObject(image, forKey: key as NSString, cost: cacheCost(for: image))
+        storeInMemory(image, for: url, key: key)
         persistImage(image, forKey: key)
         return image
+    }
+
+    private func storeInMemory(_ image: NSImage, for url: URL, key: String) {
+        cache.setObject(image, forKey: key as NSString, cost: cacheCost(for: image))
+
+        let pathKey = ImageIdentity.cacheKey(for: url)
+        stateQueue.sync {
+            var keys = memoryKeysByPathKey[pathKey] ?? []
+            keys.insert(key)
+            memoryKeysByPathKey[pathKey] = keys
+        }
     }
 
     private func loadImageFromDisk(for sourceURL: URL, key: String) -> NSImage? {
@@ -187,23 +212,12 @@ final class ImageCache {
     }
 
     private func cacheKey(for url: URL, size: CGFloat) -> String {
-        let pathHash = url.path.hash
+        let pathKey = ImageIdentity.cacheKey(for: url)
         let sizeString = String(format: "%.0f", size)
-        return "\(pathHash)_\(sizeString)"
+        return "\(pathKey)_\(sizeString)"
     }
 
     private func cacheCost(for image: NSImage) -> Int {
         Int(image.size.width * image.size.height * 4)
-    }
-}
-
-private extension NSImage {
-    var pngData: Data? {
-        guard let cgImage = cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            return nil
-        }
-
-        let representation = NSBitmapImageRep(cgImage: cgImage)
-        return representation.representation(using: .png, properties: [:])
     }
 }

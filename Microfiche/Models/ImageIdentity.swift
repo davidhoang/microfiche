@@ -11,7 +11,7 @@ import Foundation
 enum ImageIdentity {
     /// Stable identity derived from the file's normalized path.
     static func stableID(for url: URL) -> UUID {
-        let digest = SHA256.hash(data: Data(normalizedPath(for: url).utf8))
+        let digest = pathDigest(for: url)
         let bytes = Array(digest.prefix(16))
         return UUID(uuid: (
             bytes[0], bytes[1], bytes[2], bytes[3],
@@ -21,8 +21,18 @@ enum ImageIdentity {
         ))
     }
 
+    /// Stable, process-independent key for on-disk image caches.
+    /// Prefer this over `String.hash`, which is randomized per launch.
+    static func cacheKey(for url: URL) -> String {
+        pathDigest(for: url).map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Canonical path used for identity and local metadata keys.
     static func normalizedPath(for url: URL) -> String {
         url.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private static func pathDigest(for url: URL) -> SHA256.Digest {
+        SHA256.hash(data: Data(normalizedPath(for: url).utf8))
     }
 }

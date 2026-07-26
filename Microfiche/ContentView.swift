@@ -580,6 +580,10 @@ struct ContentView: View {
             }
         }
         ImageMetadataStore.shared.remove(for: trashedURLs)
+        for url in trashedURLs {
+            ImageCache.shared.clearCacheForFile(at: url)
+            PreviewImageCache.shared.clearCacheForFile(at: url)
+        }
 
         if let deletedDetailIndex {
             let nextIndex = min(deletedDetailIndex, imageFiles.count - 1)
@@ -717,6 +721,8 @@ struct ContentView: View {
         do {
             try FileManager.default.moveItem(at: oldURL, to: newURL)
             ImageMetadataStore.shared.move(from: oldURL, to: newURL)
+            ImageCache.shared.clearCacheForFile(at: oldURL)
+            PreviewImageCache.shared.clearCacheForFile(at: oldURL)
 
             if let index = imageFiles.firstIndex(where: { $0.url == oldURL }) {
                 let oldID = imageFiles[index].id
