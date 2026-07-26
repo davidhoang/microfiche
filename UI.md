@@ -28,7 +28,7 @@ Before merging a visual change, verify that:
 
 ## Overview
 
-Microfiche uses a modern, elevated design with clear visual hierarchy inspired by Arc browser and contemporary macOS applications.
+Microfiche uses a durable, snappy macOS photo-library UI: solid system surfaces, crisp selection, and short interaction motion. Native Liquid Glass carries navigation chrome; content stays matte and scannable.
 
 ## Main UI Components
 
@@ -76,26 +76,25 @@ Microfiche uses a modern, elevated design with clear visual hierarchy inspired b
 
 ---
 
-### 3. Content Area Elevation
+### 3. Content Area
 **Location:** Right side of window (main area)
 **Purpose:** Display image grid/list and provide visual hierarchy
-**Background:** `NSColor.controlBackgroundColor` (medium grey)
+**Background:** Solid `NSColor.controlBackgroundColor` (no decorative gradients or blur)
 
 **Components:**
-- Unified Toolbar (top)
+- Hairline separator under the title/toolbar edge
 - Image Grid or Image List (scrollable content)
+- Floating view-mode control (bottom)
 
-**Elevation Styling:**
-- **Border Radius:** 12pt rounded corners
-- **Shadow:** 8pt blur, 15% black opacity, -2pt x-offset
-- **Padding:** 2pt inset from window edges
-- **Visual Effect:** Appears as elevated card floating above sidebar
+**Styling:**
+- Matte canvas with a quiet leading separator against the sidebar
+- Pre-Tahoe fallback may use a light card elevation via `microficheDetailChrome()`
+- On macOS 26+, defer to system NavigationSplitView / window materials
 
 **Design Rationale:**
-- Creates clear separation from sidebar
-- Provides focus on main content
-- Modern, card-based design language
-- Minimal inset (2pt) maintains screen real estate while showing shadow
+- Solid surfaces read as durable and photographic
+- Photos stay the focus; chrome stays quiet
+- Snappy hover/selection avoids soft lift effects that feel slow
 
 ---
 
@@ -173,23 +172,36 @@ This three-tier color system creates natural visual hierarchy:
 
 ## Design Principles
 
-1. **Visual Hierarchy Through Color**
-   Three-tier color system (dark → medium → light) guides user attention
+1. **Durable Surfaces**
+   Prefer solid system colors and materials over decorative gradients, blur orbs, or soft glow. The canvas should feel planted, not atmospheric.
 
-2. **Elevation Through Shadow**
-   Content Area appears to float above Sidebar, creating depth
+2. **Snappy Motion**
+   Interaction feedback uses short ease-out timing (`MicroficheMotion.snap` ≈ 100ms). Avoid scale lifts and drop-shadow hover. Respect Reduce Motion.
 
-3. **Subtle Toolbar**
-   Light toolbar recedes visually, keeping focus on content
+3. **Crisp Selection**
+   Selection is a high-contrast stroke and quiet fill — no accent glow or floating shadow. Hover is a flat tint only.
 
-4. **Minimal Insets**
-   2pt padding maintains screen space while showing elevation
+4. **Native Hierarchy**
+   Let NavigationSplitView, toolbars, and system materials carry structure. Custom elevation is a fallback for pre-Tahoe macOS only.
 
-5. **Fluid Sidebar**
-   No dividers or lines - smooth, uninterrupted navigation
+5. **Dense, Readable Content**
+   Tighter grid spacing and thumbnail corners keep the library scannable. Empty states stay direct — icon, headline, one supporting line.
 
-6. **Arc-Inspired Design**
-   Clean, modern aesthetic with subtle color transitions
+6. **Subtle Chrome**
+   Floating view-mode control and sidebar rows stay quiet so photos remain the focus.
+
+---
+
+## Motion Tokens
+
+Defined in `LiquidGlassDesign.swift` as `MicroficheMotion`:
+
+| Token | Duration | Use |
+|-------|----------|-----|
+| `snap` | 100ms easeOut | Hover, selection chrome, scroll-to, view-mode toggle |
+| `transition` | 140ms easeOut | Detail open/close, sidebar collapse |
+
+Disable animations while the grid size slider is dragging.
 
 ---
 
@@ -197,8 +209,6 @@ This three-tier color system creates natural visual hierarchy:
 
 Potential improvements to consider:
 
-- **Adaptive Elevation:** Adjust shadow based on light/dark mode
-- **Material Effects:** Use `.ultraThickMaterial` for glassmorphic toolbar
-- **Hover States:** Subtle highlights on sidebar items
-- **Animated Transitions:** Smooth elevation changes when switching views
+- **Reduced-motion audit:** Propagate `accessibilityReduceMotion` to remaining transitions
+- **Keyboard focus ring:** Match selection chrome for full-keyboard browsing
 - **Custom Accent Colors:** User-selectable theme colors

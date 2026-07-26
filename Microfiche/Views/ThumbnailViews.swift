@@ -61,12 +61,8 @@ struct OptimizedAsyncImage: View {
     }
 
     private var thumbnailPlaceholder: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(Color.gray.opacity(isLoading ? 0.12 : 0.08))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.white.opacity(0.28), lineWidth: 1)
-            )
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(Color(NSColor.quaternaryLabelColor).opacity(isLoading ? 0.18 : 0.12))
     }
 
     private func syncActiveDecodeSize() {
@@ -152,6 +148,10 @@ struct FileThumbnailView: View {
             .frame(width: size, height: height)
         }
         .frame(width: size, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        }
     }
 }

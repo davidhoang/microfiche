@@ -31,7 +31,7 @@ struct MainContentView: View {
 
             VStack(spacing: 0) {
                 Rectangle()
-                    .fill(Color.black.opacity(0.08))
+                    .fill(Color(NSColor.separatorColor).opacity(0.45))
                     .frame(height: 1)
 
                 VStack {
@@ -66,52 +66,39 @@ struct MainContentView: View {
                         }
                     }
                 }
-                .padding(20)
+                .padding(16)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .bottom) {
             if showsToolbar {
                 FloatingViewModeControl(selection: $viewMode)
-                    .padding(.bottom, 18)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 16)
+                    .transition(.opacity)
             }
         }
     }
 
     private var mainCanvasBackground: some View {
-        LinearGradient(
-            colors: [
-                Color(NSColor.textBackgroundColor),
-                Color(NSColor.controlBackgroundColor).opacity(0.88)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .overlay(alignment: .topLeading) {
-            Circle()
-                .fill(Color.white.opacity(0.22))
-                .frame(width: 240, height: 240)
-                .blur(radius: 88)
-                .offset(x: -18, y: -86)
-        }
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(Color.black.opacity(0.04))
-                .frame(width: 1)
-        }
+        Color(NSColor.controlBackgroundColor)
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(Color(NSColor.separatorColor).opacity(0.55))
+                    .frame(width: 1)
+            }
     }
 
 }
 
 private struct FloatingViewModeControl: View {
     @Binding var selection: ViewMode
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(ViewMode.allCases) { mode in
                 Button {
-                    withAnimation(.easeInOut(duration: 0.16)) {
+                    withAnimation(MicroficheMotion.snap(reducedMotion: reduceMotion)) {
                         selection = mode
                     }
                 } label: {
@@ -127,15 +114,15 @@ private struct FloatingViewModeControl: View {
                 .background {
                     if selection == mode {
                         Capsule()
-                            .fill(Color.primary.opacity(0.1))
+                            .fill(Color.primary.opacity(0.12))
                     }
                 }
                 .accessibilityValue(selection == mode ? "Selected" : "")
             }
         }
-        .padding(4)
+        .padding(3)
         .floatingViewModeGlass()
-        .shadow(color: Color.black.opacity(0.12), radius: 12, y: 5)
+        .shadow(color: Color.black.opacity(0.08), radius: 6, y: 2)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("View mode")
     }
@@ -161,31 +148,22 @@ private struct EmptyLibraryStateView: View {
     let unavailableLocation: LinkedLibraryFolder?
 
     var body: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(Color.accentColor.opacity(0.1))
-                    .frame(width: 96, height: 96)
+        VStack(spacing: 14) {
+            Image(systemName: unavailableLocation == nil ? "photo.on.rectangle.angled" : "externaldrive.badge.xmark")
+                .font(.system(size: 36, weight: .medium))
+                .foregroundStyle(.secondary)
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 56, height: 56)
 
-                Image(systemName: unavailableLocation == nil ? "photo.on.rectangle.angled" : "externaldrive.badge.xmark")
-                    .font(.system(size: 38, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(spacing: 8) {
-                Text(unavailableLocation == nil ? "LIBRARY" : "LOCATION OFFLINE")
-                    .font(.system(size: 10, weight: .medium))
-                    .tracking(0.8)
-                    .foregroundStyle(.tertiary)
-
+            VStack(spacing: 6) {
                 Text(unavailableLocation == nil ? "No images yet" : "Reconnect the drive")
-                    .font(.system(size: 26, weight: .semibold))
+                    .font(.system(size: 22, weight: .semibold))
 
                 Text(emptyStateMessage)
-                    .font(.system(size: 16, weight: .regular))
+                    .font(.system(size: 14, weight: .regular))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 380)
+                    .frame(maxWidth: 360)
             }
         }
         .padding(.horizontal, 24)
@@ -206,9 +184,9 @@ private struct EmptyLibraryStateView: View {
 struct ImageGridView: View {
     enum Layout {
         static let aspectRatio: CGFloat = 3 / 2
-        static let spacing: CGFloat = 20
-        static let horizontalInset: CGFloat = 16
-        static let selectionInset: CGFloat = 8
+        static let spacing: CGFloat = 14
+        static let horizontalInset: CGFloat = 12
+        static let selectionInset: CGFloat = 6
 
         static func columnCount(availableWidth: CGFloat, thumbnailWidth: CGFloat) -> Int {
             let usableWidth = max(0, availableWidth - (horizontalInset * 2))
@@ -293,7 +271,7 @@ struct ImageGridView: View {
                 }
                 .onChange(of: scrollToID) { _, newID in
                     if let id = newID {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(MicroficheMotion.snap) {
                             proxy.scrollTo(id, anchor: .center)
                         }
                         DispatchQueue.main.async { scrollToID = nil }
@@ -307,7 +285,7 @@ struct ImageGridView: View {
                 transaction.disablesAnimations = true
             }
         }
-        .animation(isResizing ? nil : .snappy(duration: 0.22), value: thumbnailSize)
+        .animation(isResizing ? nil : MicroficheMotion.snap, value: thumbnailSize)
     }
 
     private func updateColumnCount(for width: CGFloat) {
@@ -421,7 +399,7 @@ struct ImageListView: View {
             }
             .onChange(of: scrollToID) { _, newID in
                 if let id = newID {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withAnimation(MicroficheMotion.snap) {
                         proxy.scrollTo(id, anchor: .center)
                     }
                     DispatchQueue.main.async { scrollToID = nil }
@@ -445,7 +423,7 @@ struct ImageListRow: View {
         HStack(spacing: 12) {
             FileThumbnailView(file: file, size: 40, onRename: onRename)
                 .frame(width: 40, height: 40)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 EditableFileNameView(
                     file: file,
                     isSelected: isSelected,
@@ -462,19 +440,19 @@ struct ImageListRow: View {
             Spacer()
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .padding(.vertical, 6)
+        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .background {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.clear)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
         }
         .overlay {
             if isSelected {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(0.28), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1.5)
             }
         }
-        .sidebarHoverBackground(isHovered: isHovered, isSelected: isSelected, cornerRadius: 9)
+        .sidebarHoverBackground(isHovered: isHovered, isSelected: isSelected, cornerRadius: 7)
         .onHover { isHovered = $0 }
         .onDrag {
             imageFileProvider(for: file.url)
