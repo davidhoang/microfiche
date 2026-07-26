@@ -1,4 +1,4 @@
-# Microfiche UI Architecture
+# Microfiche Design
 
 ## Native macOS Design References
 
