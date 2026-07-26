@@ -169,7 +169,7 @@ struct ContentView: View {
                         .transition(.opacity)
                     }
                 }
-                .animation(.easeInOut(duration: 0.16), value: detailViewFile?.id)
+                .animation(MicroficheMotion.transition, value: detailViewFile?.id)
                 .inspector(isPresented: $isMetadataInspectorPresented) {
                     Group {
                         if let focusedImageFile {
@@ -326,7 +326,7 @@ struct ContentView: View {
                     .transition(.opacity)
                 }
         }
-        .animation(.easeInOut(duration: 0.12), value: isQuickPreviewPresented)
+        .animation(MicroficheMotion.snap, value: isQuickPreviewPresented)
         .task {
             restoreLibrarySelection()
         }
@@ -436,7 +436,7 @@ struct ContentView: View {
         guard splitViewVisibility != .detailOnly else { return }
 
         if width < SidebarLayout.autoCollapseWidth {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(MicroficheMotion.transition) {
                 splitViewVisibility = .detailOnly
             }
         }
@@ -531,7 +531,7 @@ struct ContentView: View {
             isQuickPreviewPresented = false
             selectedImageFileIDs = [fileID]
             focusedImageFileID = fileID
-            withAnimation(.easeOut(duration: 0.18)) {
+            withAnimation(MicroficheMotion.transition) {
                 detailViewFile = file
                 isMetadataInspectorPresented = false
             }
@@ -539,7 +539,7 @@ struct ContentView: View {
     }
 
     private func closeImageDetail() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(MicroficheMotion.transition) {
             detailViewFile = nil
             isMetadataInspectorPresented = true
         }

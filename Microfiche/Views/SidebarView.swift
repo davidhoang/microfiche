@@ -336,9 +336,9 @@ private struct SidebarRowModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(borderColor, lineWidth: isDropTargeted ? 2 : 1)
             )
-            .animation(.easeInOut(duration: 0.18), value: isSelected)
-            .animation(.easeOut(duration: 0.12), value: isHovered)
-            .animation(.easeInOut(duration: 0.18), value: isDropTargeted)
+            .animation(MicroficheMotion.snap, value: isSelected)
+            .animation(MicroficheMotion.snap, value: isHovered)
+            .animation(MicroficheMotion.snap, value: isDropTargeted)
     }
 
     private var borderColor: Color {
