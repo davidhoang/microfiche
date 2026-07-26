@@ -15,12 +15,19 @@ final class PreviewImageCache {
     typealias Completion = (NSImage?) -> Void
 
     private let cache = NSCache<NSURL, NSImage>()
+    private let fileManager = FileManager.default
+    private let cacheDirectory: URL
     private let interactiveQueue = DispatchQueue(label: "com.microfiche.previewcache.interactive", qos: .userInitiated, attributes: .concurrent)
     private let prefetchQueue = DispatchQueue(label: "com.microfiche.previewcache.prefetch", qos: .utility, attributes: .concurrent)
     private let stateQueue = DispatchQueue(label: "com.microfiche.previewcache.state")
+    private let ioQueue = DispatchQueue(label: "com.microfiche.previewcache.io", qos: .utility, attributes: .concurrent)
     private var inFlight: [String: [Completion]] = [:]
 
     private init() {
+        let cachesDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        cacheDirectory = cachesDirectory.appendingPathComponent("MicrofichePreviews")
+        try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+
         cache.countLimit = 100
         cache.totalCostLimit = 5 * 1024 * 1024 * 1024
     }
@@ -43,7 +50,7 @@ final class PreviewImageCache {
             return
         }
 
-        let key = url.path
+        let key = ImageIdentity.cacheKey(for: url)
 
         stateQueue.async {
             if self.inFlight[key] != nil {
@@ -58,12 +65,7 @@ final class PreviewImageCache {
             let queue = self.queue(for: priority)
             queue.async {
                 let image = autoreleasepool {
-                    self.loadAndOptimizeImage(from: url)
-                }
-
-                if let image = image {
-                    let cost = Int(image.size.width * image.size.height * 4)
-                    self.cache.setObject(image, forKey: url as NSURL, cost: cost)
+                    self.loadImageFromDiskOrSource(for: url, key: key)
                 }
 
                 let completions = self.stateQueue.sync {
@@ -80,6 +82,42 @@ final class PreviewImageCache {
         }
     }
 
+    func clearCache() {
+        cache.removeAllObjects()
+        stateQueue.sync {
+            inFlight.removeAll()
+        }
+        try? fileManager.removeItem(at: cacheDirectory)
+        try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+    }
+
+    func clearCacheForFile(at url: URL) {
+        cache.removeObject(forKey: url as NSURL)
+
+        let key = ImageIdentity.cacheKey(for: url)
+        stateQueue.sync {
+            inFlight.removeValue(forKey: key)
+        }
+
+        let cacheURL = cacheURL(forKey: key)
+        try? fileManager.removeItem(at: cacheURL)
+    }
+
+    func preloadLibrary(urls: [URL], priority: DispatchQoS.QoSClass = .background) {
+        let imageURLs = urls.filter { url in
+            let ext = url.pathExtension.lowercased()
+            return ext != "pdf" && ext != "svg"
+        }
+
+        for url in imageURLs {
+            if cache.object(forKey: url as NSURL) != nil {
+                continue
+            }
+
+            preloadImage(for: url, priority: priority)
+        }
+    }
+
     private func queue(for priority: DispatchQoS.QoSClass) -> DispatchQueue {
         switch priority {
         case .userInteractive, .userInitiated:
@@ -87,6 +125,40 @@ final class PreviewImageCache {
         default:
             return prefetchQueue
         }
+    }
+
+    private func loadImageFromDiskOrSource(for url: URL, key: String) -> NSImage? {
+        if let diskImage = loadImageFromDisk(for: url, key: key) {
+            cache.setObject(diskImage, forKey: url as NSURL, cost: cacheCost(for: diskImage))
+            return diskImage
+        }
+
+        guard let image = loadAndOptimizeImage(from: url) else {
+            return nil
+        }
+
+        cache.setObject(image, forKey: url as NSURL, cost: cacheCost(for: image))
+        persistImage(image, forKey: key)
+        return image
+    }
+
+    private func loadImageFromDisk(for sourceURL: URL, key: String) -> NSImage? {
+        let cacheURL = cacheURL(forKey: key)
+
+        guard fileManager.fileExists(atPath: cacheURL.path) else {
+            return nil
+        }
+
+        if let cacheAttributes = try? fileManager.attributesOfItem(atPath: cacheURL.path),
+           let sourceAttributes = try? fileManager.attributesOfItem(atPath: sourceURL.path),
+           let cacheModDate = cacheAttributes[.modificationDate] as? Date,
+           let sourceModDate = sourceAttributes[.modificationDate] as? Date,
+           sourceModDate > cacheModDate {
+            try? fileManager.removeItem(at: cacheURL)
+            return nil
+        }
+
+        return NSImage(contentsOf: cacheURL)
     }
 
     private func loadAndOptimizeImage(from url: URL) -> NSImage? {
@@ -119,25 +191,22 @@ final class PreviewImageCache {
         return NSImage(cgImage: cgImage, size: NSSize(width: targetWidth, height: targetHeight))
     }
 
-    func clearCache() {
-        cache.removeAllObjects()
-        stateQueue.sync {
-            inFlight.removeAll()
+    private func persistImage(_ image: NSImage, forKey key: String) {
+        let cacheURL = cacheURL(forKey: key)
+
+        ioQueue.async {
+            guard let data = image.pngData else { return }
+            try? data.write(to: cacheURL, options: .atomic)
         }
     }
 
-    func preloadLibrary(urls: [URL], priority: DispatchQoS.QoSClass = .background) {
-        let imageURLs = urls.filter { url in
-            let ext = url.pathExtension.lowercased()
-            return ext != "pdf" && ext != "svg"
-        }
+    private func cacheURL(forKey key: String) -> URL {
+        cacheDirectory
+            .appendingPathComponent(key)
+            .appendingPathExtension("png")
+    }
 
-        for url in imageURLs {
-            if cache.object(forKey: url as NSURL) != nil {
-                continue
-            }
-
-            preloadImage(for: url, priority: priority)
-        }
+    private func cacheCost(for image: NSImage) -> Int {
+        Int(image.size.width * image.size.height * 4)
     }
 }

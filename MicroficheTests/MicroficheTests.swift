@@ -52,6 +52,87 @@ final class MicroficheTests: XCTestCase {
         wait(for: [expectation], timeout: 3.0)
     }
 
+    func testImageIdentityCacheKeyIsStableAndPathNormalized() {
+        let plain = URL(fileURLWithPath: "/Users/example/Pictures/photo.png")
+        let withDot = URL(fileURLWithPath: "/Users/example/Pictures/./photo.png")
+
+        let first = ImageIdentity.cacheKey(for: plain)
+        let second = ImageIdentity.cacheKey(for: plain)
+        let normalized = ImageIdentity.cacheKey(for: withDot)
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(first, normalized)
+        XCTAssertEqual(first.count, 64)
+        XCTAssertTrue(first.allSatisfy(\.isHexDigit))
+    }
+
+    func testPreviewImageCachePersistsToDiskAndClearsPerFile() throws {
+        let pngData = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )!
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("microfiche-preview-cache-\(UUID().uuidString).png")
+        try pngData.write(to: url)
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            PreviewImageCache.shared.clearCacheForFile(at: url)
+        }
+
+        PreviewImageCache.shared.clearCacheForFile(at: url)
+
+        let loadExpectation = expectation(description: "preview load completes")
+        PreviewImageCache.shared.preloadImage(for: url) { image in
+            XCTAssertNotNil(image)
+            XCTAssertNotNil(PreviewImageCache.shared.getImage(for: url))
+            loadExpectation.fulfill()
+        }
+        wait(for: [loadExpectation], timeout: 3.0)
+
+        let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let diskURL = cachesDirectory
+            .appendingPathComponent("MicrofichePreviews")
+            .appendingPathComponent(ImageIdentity.cacheKey(for: url))
+            .appendingPathExtension("png")
+
+        var diskReady = false
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            if FileManager.default.fileExists(atPath: diskURL.path) {
+                diskReady = true
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        XCTAssertTrue(diskReady, "Expected optimized preview PNG on disk")
+
+        PreviewImageCache.shared.clearCacheForFile(at: url)
+        XCTAssertNil(PreviewImageCache.shared.getImage(for: url))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: diskURL.path))
+    }
+
+    func testImageCacheClearCacheForFileRemovesMemoryEntry() throws {
+        let pngData = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )!
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("microfiche-thumb-clear-\(UUID().uuidString).png")
+        try pngData.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        ImageCache.shared.clearCache()
+
+        let expectation = expectation(description: "thumbnail load completes")
+        ImageCache.shared.loadImage(for: url, size: 40) { image in
+            XCTAssertNotNil(image)
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 3.0)
+        XCTAssertNotNil(ImageCache.shared.getImage(for: url, size: 40))
+
+        ImageCache.shared.clearCacheForFile(at: url)
+        XCTAssertNil(ImageCache.shared.getImage(for: url, size: 40))
+    }
+
     func testGridColumnCountUsesAvailableWidthAndHandlesZeroWidth() {
         XCTAssertEqual(
             ImageGridView.Layout.columnCount(availableWidth: 900, thumbnailWidth: 120),

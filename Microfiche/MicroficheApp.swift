@@ -32,9 +32,10 @@ struct MicroficheApp: App {
                 Divider()
                 Button("Clear Image Cache") {
                     ImageCache.shared.clearCache()
+                    PreviewImageCache.shared.clearCache()
                 }
                 .keyboardShortcut("k", modifiers: [.command, .shift])
-                
+
                 Button("Cache Info") {
                     showCacheInfo()
                 }
@@ -42,25 +43,25 @@ struct MicroficheApp: App {
             }
         }
     }
-    
+
     private func showCacheInfo() {
         let monitor = PerformanceMonitor.shared
         let hitRate = String(format: "%.1f%%", monitor.cacheHitRate * 100)
         let totalRequests = monitor.totalRequests
         let cacheHits = monitor.cacheHits
-        
+
         let alert = NSAlert()
         alert.messageText = "Cache Performance"
         alert.informativeText = """
         Cache Hit Rate: \(hitRate)
         Total Requests: \(totalRequests)
         Cache Hits: \(cacheHits)
-        
-        Image cache is stored in the app's cache directory and will be automatically managed. You can clear it manually if needed.
+
+        Thumbnails and optimized previews are stored in the app's cache directory and will be automatically managed. You can clear them manually if needed.
         """
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Reset Stats")
-        
+
         let response = alert.runModal()
         if response == .alertSecondButtonReturn {
             monitor.reset()

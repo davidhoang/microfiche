@@ -14,13 +14,17 @@ Microfiche uses a multi-tier caching strategy to deliver instant image previews 
 
 **Implementation:**
 - Uses `NSCache<NSURL, NSImage>` for automatic memory management
-- Background processing queue with `.userInitiated` QoS for fast decoding
+- Persists optimized previews as PNG under `~/Library/Caches/MicrofichePreviews/`
+- Background processing queues (`.userInitiated` interactive / `.utility` prefetch)
 - Smart image optimization using `CGImageSource`
+- Disk entries keyed by stable SHA256 path digest (`ImageIdentity.cacheKey`)
+- Invalidates disk entries when the source file's modification date is newer
 
 **Cache Limits:**
-- **Count Limit:** 100 images maximum
+- **Count Limit:** 100 images maximum (in memory)
 - **Memory Limit:** 5 GB total
 - NSCache automatically evicts least-recently-used images when limits exceeded
+- Disk entries survive app relaunch until cleared or source files change
 
 **Optimization Strategy:**
 ```swift
@@ -30,12 +34,15 @@ Microfiche uses a multi-tier caching strategy to deliver instant image previews 
 ```
 
 **Key Methods:**
-- `getImage(for: URL)` - Instant cache lookup (synchronous)
-- `preloadImage(for: URL, completion:)` - Background loading and optimization
+- `getImage(for: URL)` - Instant memory lookup (synchronous)
+- `preloadImage(for: URL, completion:)` - Background load from disk or source
+- `clearCacheForFile(at:)` - Drop memory + disk entry for one file
+- `clearCache()` - Wipe memory and disk
 
 **Performance:**
-- Cache hit: <1ms (instant display)
-- Cache miss: 100-300ms (background loading with progress indicator)
+- Memory hit: <1ms (instant display)
+- Disk hit: typically much faster than re-decoding the source
+- Cold miss: 100-300ms (background loading with progress indicator)
 
 ---
 
@@ -46,12 +53,13 @@ Microfiche uses a multi-tier caching strategy to deliver instant image previews 
 **Location:** `Services/ImageCache.swift`
 
 **Implementation:**
-- Similar NSCache-based architecture
-- Generates size-specific thumbnails (e.g., 200px for grid, 40px for list)
-- Separate cache entries for different sizes
+- `NSCache` plus on-disk PNG files under `~/Library/Caches/MicroficheThumbnails/`
+- Size-specific thumbnails (e.g., 180px grid decode, 40px list)
+- Stable SHA256 path keys via `ImageIdentity.cacheKey` (survives relaunch)
+- Cleared per-file on rename/trash via `clearCacheForFile(at:)`
 
 **Cache Limits:**
-- Automatically managed by NSCache based on available memory
+- Count limit 300 / ~80 MB in memory; disk managed under Caches
 - Smaller memory footprint than PreviewImageCache (thumbnails only)
 
 ---
@@ -98,10 +106,12 @@ The entire library preloads as soon as you select a folder or contact sheet. Wit
 
 ## Storage Locations
 
-### Temporary Cache (In-Memory Only)
-- **PreviewImageCache:** NSCache in RAM (not persisted to disk)
-- **ImageCache:** NSCache in RAM (not persisted to disk)
-- **Benefit:** Automatic cleanup when app quits, no disk space consumed
+### Image Decode Caches (`~/Library/Caches/`)
+- **PreviewImageCache:** RAM (`NSCache`) + disk (`MicrofichePreviews/`)
+- **ImageCache:** RAM (`NSCache`) + disk (`MicroficheThumbnails/`)
+- **Keys:** Stable SHA256 of normalized path (not Swift's randomized `hash`)
+- **Invalidation:** Source modification date newer than cached file; also cleared on rename/trash and via **Clear Image Cache** (⌘⇧K)
+- **Benefit:** Fast cold starts without regenerating optimized previews/thumbnails
 
 ### Permanent Storage (Contact Sheets)
 - **Location:** `~/Library/Application Support/Microfiche/ContactSheets/`
