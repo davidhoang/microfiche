@@ -41,6 +41,18 @@ struct MicroficheApp: App {
                 }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
             }
+
+            CommandGroup(after: .help) {
+                Divider()
+                Button("Replay Welcome Onboarding") {
+                    UserPreferences.shared.replayOnboarding()
+                }
+                .disabled(!UserPreferences.shared.isOnboardingEnabled)
+            }
+        }
+
+        Settings {
+            SettingsView()
         }
     }
 

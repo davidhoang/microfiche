@@ -460,4 +460,54 @@ final class MicroficheTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testUserPreferencesDefaultsEnableOnboardingUntilCompleted() {
+        let suiteName = "microfiche.tests.onboarding.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let preferences = UserPreferences(defaults: defaults)
+
+        XCTAssertTrue(preferences.isOnboardingEnabled)
+        XCTAssertFalse(preferences.hasCompletedOnboarding)
+        XCTAssertTrue(preferences.shouldPresentOnboarding)
+
+        preferences.evaluateLaunchPresentation()
+        XCTAssertTrue(preferences.isPresentingOnboarding)
+
+        preferences.completeOnboarding()
+        XCTAssertTrue(preferences.hasCompletedOnboarding)
+        XCTAssertFalse(preferences.isPresentingOnboarding)
+        XCTAssertFalse(preferences.shouldPresentOnboarding)
+    }
+
+    @MainActor
+    func testUserPreferencesTestingToggleAndReplay() {
+        let suiteName = "microfiche.tests.onboarding-toggle.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let preferences = UserPreferences(defaults: defaults)
+        preferences.completeOnboarding()
+
+        preferences.isOnboardingEnabled = false
+        XCTAssertFalse(preferences.isPresentingOnboarding)
+        preferences.replayOnboarding()
+        XCTAssertFalse(preferences.isPresentingOnboarding)
+        XCTAssertTrue(preferences.hasCompletedOnboarding)
+
+        preferences.isOnboardingEnabled = true
+        preferences.replayOnboarding()
+        XCTAssertFalse(preferences.hasCompletedOnboarding)
+        XCTAssertTrue(preferences.isPresentingOnboarding)
+        XCTAssertTrue(preferences.shouldPresentOnboarding)
+    }
+
+    func testOnboardingSequenceCoversValueProposition() {
+        let steps = OnboardingStep.all
+        XCTAssertEqual(steps.count, 4)
+        XCTAssertEqual(steps.map(\.id), ["welcome", "folders", "contact-sheets", "metadata"])
+        XCTAssertTrue(steps.allSatisfy { !$0.title.isEmpty && !$0.message.isEmpty && !$0.symbolName.isEmpty })
+    }
+
 }
