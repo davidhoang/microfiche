@@ -533,7 +533,8 @@ struct ContentView: View {
             focusedImageFileID = fileID
             withAnimation(MicroficheMotion.transition) {
                 detailViewFile = file
-                isMetadataInspectorPresented = false
+                // Keep the metadata inspector available for editing Finder labels/tags.
+                isMetadataInspectorPresented = true
             }
         }
     }
@@ -541,7 +542,6 @@ struct ContentView: View {
     private func closeImageDetail() {
         withAnimation(MicroficheMotion.transition) {
             detailViewFile = nil
-            isMetadataInspectorPresented = true
         }
         requestScrollToFocusedImage()
     }

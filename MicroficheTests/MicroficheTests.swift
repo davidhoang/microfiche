@@ -415,6 +415,44 @@ final class MicroficheTests: XCTestCase {
         XCTAssertTrue(decoded.isEmpty)
     }
 
+    func testFinderLabelMigratesLegacyColorNames() {
+        XCTAssertEqual(FinderLabel.migrating(from: ["Red"]), .red)
+        XCTAssertEqual(FinderLabel.migrating(from: ["  orange "]), .orange)
+        XCTAssertEqual(FinderLabel.migrating(from: ["favorite", "Blue"]), .blue)
+        XCTAssertNil(FinderLabel.migrating(from: ["favorite", "keeper"]))
+        XCTAssertEqual(FinderLabel(labelNumber: 7), .red)
+        XCTAssertEqual(FinderLabel(labelNumber: nil), .none)
+    }
+
+    func testNativeFileMetadataRoundTripsLabelTagsAndComment() throws {
+        let fileManager = FileManager.default
+        let url = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-native-meta-\(UUID().uuidString).txt")
+        try "sample".write(to: url, atomically: true, encoding: .utf8)
+        defer { try? fileManager.removeItem(at: url) }
+
+        let expected = NativeFileMetadata(
+            label: .orange,
+            tagNames: ["keeper", "portrait"],
+            comment: "Looks good"
+        )
+        try NativeFileMetadataService.save(expected, for: url)
+
+        let loaded = NativeFileMetadataService.load(from: url)
+        XCTAssertEqual(loaded.label, .orange)
+        XCTAssertEqual(loaded.tagNames, ["keeper", "portrait"])
+        XCTAssertEqual(loaded.comment, "Looks good")
+
+        try NativeFileMetadataService.setLabel(.none, for: url)
+        try NativeFileMetadataService.setTagNames([], for: url)
+        try NativeFileMetadataService.setComment("", for: url)
+
+        let cleared = NativeFileMetadataService.load(from: url)
+        XCTAssertEqual(cleared.label, .none)
+        XCTAssertTrue(cleared.tagNames.isEmpty)
+        XCTAssertTrue(cleared.comment.isEmpty)
+    }
+
     func testPerformanceExample() throws {
         // This is an example of a performance test case.
         self.measure {
