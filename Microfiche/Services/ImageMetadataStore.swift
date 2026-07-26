@@ -2,8 +2,10 @@
 //  ImageMetadataStore.swift
 //  Microfiche
 //
-//  Local JSON persistence for tags, labels, comments, and source notes.
-//  Metadata is stored in Application Support (not written into image files).
+//  Local JSON persistence for tags, comments, and source notes.
+//  Finder color labels, tags, and comments are also written natively via
+//  NativeFileMetadataService; this store mirrors tags/comments and keeps
+//  Microfiche-only fields (whereFrom). Legacy free-text `labels` are migrated.
 //
 
 import Foundation

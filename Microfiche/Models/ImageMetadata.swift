@@ -3,12 +3,14 @@
 //  Microfiche
 //
 //  Locally stored organization metadata for a library image.
+//  `labels` is legacy free-text (migrated to Finder color labels).
 //
 
 import Foundation
 
 struct ImageMetadata: Codable, Equatable, Sendable {
     var tags: [String]
+    /// Legacy free-text labels. Prefer FinderLabel / NativeFileMetadataService.
     var labels: [String]
     var comments: String
     var whereFrom: String

@@ -54,7 +54,7 @@ Rules derived from `ContentView`, `SidebarView`, and `ImageDetailView`.
 2. **Sidebar owns library location** — Selection is a single enum: All Images, Folder, or Contact Sheet. External drive rows are status only — not navigation targets.
 3. **Location change clears browsing state** — On library selection change, clear image selection, focus, quick preview, and detail view.
 4. **Detail is a canvas overlay** — Double-click opens `ImageDetailView` over the library detail column (opacity / hit-testing), not a pushed navigation destination or new column.
-5. **Inspector yields to focused viewing** — Entering detail hides the inspector by default; leaving detail restores it.
+5. **Inspector stays with detail** — Entering detail keeps the metadata inspector available so Finder labels, tags, and comments can be edited while viewing.
 6. **Sidebar is collapsible** — Width 240–360 (ideal 280). Auto-collapse to `.detailOnly` below 220 pt measured width.
 7. **Unified chrome** — Window uses unified toolbar with no title. Keep `.navigationTitle("")` unless a mode truly needs a title.
 8. **Window scale** — Minimum about 1100×700; default launch size stays large enough for sidebar + grid + inspector.
@@ -206,6 +206,7 @@ Disable animations while the grid size slider is dragging. Prefer `MicroficheMot
 
 ### Detail & metadata
 - **Files:** `Microfiche/Views/ImageDetailView.swift`, `PreviewView.swift`
+- **Native metadata:** `NativeFileMetadataService` + `FinderLabel` read/write Finder color labels, tags, and comments; inspector `FinderLabelPicker` is the primary label UI.
 
 ---
 
