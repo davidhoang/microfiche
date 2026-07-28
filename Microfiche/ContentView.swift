@@ -69,8 +69,10 @@ struct ContentView: View {
         static let minimumWidth: CGFloat = 240
         static let idealWidth: CGFloat = 280
         static let maximumWidth: CGFloat = 360
-        static let autoCollapseWidth: CGFloat = 220
     }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.toggleSidebar) private var toggleSidebar
 
     @State private var selection: Selection?
     @State private var imageFiles: [ImageFile] = []
@@ -88,7 +90,7 @@ struct ContentView: View {
     @State private var scrollToID: UUID?
     @State private var gridColumnCount: Int = 1
     @State private var detailViewFile: ImageFile?
-    @State private var isMetadataInspectorPresented = true
+    @AppStorage("isMetadataInspectorPresented") private var isMetadataInspectorPresented = true
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
     @State private var externalDriveNotice: String?
     @AppStorage("lastSelectedLibraryFolderID") private var lastSelectedLibraryFolderID = ""
@@ -110,7 +112,6 @@ struct ContentView: View {
                         externalVolumes: libraryStorage.rememberedExternalVolumes,
                         contactSheets: contactSheetStorage.contactSheets,
                         selection: selection,
-                        onWidthChange: handleSidebarWidthChange,
                         onLinkFolder: linkFolder,
                         onSelect: { newSelection in
                             selection = newSelection
@@ -140,7 +141,7 @@ struct ContentView: View {
                         max: SidebarLayout.maximumWidth
                     )
             } detail: {
-                ZStack {
+                NavigationStack {
                     MainContentView(
                         imageFiles: imageFiles,
                         unavailableLocation: unavailableSelectedFolder,
@@ -157,20 +158,14 @@ struct ContentView: View {
                         contactSheets: contactSheetStorage.contactSheets,
                         onAddToContactSheet: handleAddToContactSheet
                     )
-                    .opacity(detailViewFile == nil ? 1 : 0)
-                    .allowsHitTesting(detailViewFile == nil)
-                    .accessibilityHidden(detailViewFile != nil)
-
-                    if let detailFile = detailViewFile {
+                    .navigationDestination(item: $detailViewFile) { file in
                         ImageDetailView(
-                            file: detailFile,
+                            file: file,
                             isInspectorPresented: $isMetadataInspectorPresented,
                             onBack: closeImageDetail
                         )
-                        .transition(.opacity)
                     }
                 }
-                .animation(MicroficheMotion.transition, value: detailViewFile?.id)
                 .inspector(isPresented: $isMetadataInspectorPresented) {
                     Group {
                         if let focusedImageFile {
@@ -185,13 +180,22 @@ struct ContentView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .microficheSidebarChrome()
                     .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
                 }
             }
                 .navigationTitle("")
                 .toolbar {
                     if detailViewFile == nil {
+                        ToolbarItem {
+                            Button(action: toggleSidebar) {
+                                Image(systemName: "sidebar.left")
+                            }
+                            .help("Toggle Sidebar")
+                            .accessibilityLabel("Toggle sidebar")
+                            .accessibilityIdentifier("sidebar.toggle")
+                        }
+                        .hideSharedBackgroundIfAvailable()
+
                         ToolbarItem(placement: .principal) {
                             if viewMode == .grid {
                                 HStack(spacing: 6) {
@@ -229,6 +233,8 @@ struct ContentView: View {
                                 Image(systemName: "sidebar.right")
                             }
                             .help(isMetadataInspectorPresented ? "Hide Info" : "Show Info")
+                            .accessibilityLabel(isMetadataInspectorPresented ? "Hide inspector" : "Show inspector")
+                            .accessibilityIdentifier("inspector.toggle")
                         }
                         .hideSharedBackgroundIfAvailable()
                     }
@@ -455,16 +461,6 @@ struct ContentView: View {
         }
     }
 
-    private func handleSidebarWidthChange(_ width: CGFloat) {
-        guard splitViewVisibility != .detailOnly else { return }
-
-        if width < SidebarLayout.autoCollapseWidth {
-            withAnimation(MicroficheMotion.transition) {
-                splitViewVisibility = .detailOnly
-            }
-        }
-    }
-
     // MARK: - Contact Sheets
 
     private func handleDropToContactSheet(sheetID: UUID, urls: [URL]) {
@@ -554,16 +550,12 @@ struct ContentView: View {
             isQuickPreviewPresented = false
             selectedImageFileIDs = [fileID]
             focusedImageFileID = fileID
-            withAnimation(MicroficheMotion.transition) {
-                detailViewFile = file
-                // Keep the metadata inspector available for editing Finder labels/tags.
-                isMetadataInspectorPresented = true
-            }
+            detailViewFile = file
         }
     }
 
     private func closeImageDetail() {
-        withAnimation(MicroficheMotion.transition) {
+        withAnimation(MicroficheMotion.transition(reducedMotion: reduceMotion)) {
             detailViewFile = nil
         }
         requestScrollToFocusedImage()
