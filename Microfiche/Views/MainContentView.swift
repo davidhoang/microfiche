@@ -13,6 +13,8 @@ import UniformTypeIdentifiers
 struct MainContentView: View {
     let imageFiles: [ImageFile]
     let unavailableLocation: LinkedLibraryFolder?
+    let isFiltering: Bool
+    let onRetryUnavailableLocation: () -> Void
     let showsToolbar: Bool
     @Binding var viewMode: ViewMode
     let gridThumbnailSize: CGFloat
@@ -37,7 +39,11 @@ struct MainContentView: View {
                 VStack {
                     if imageFiles.isEmpty {
                         Spacer(minLength: 24)
-                        EmptyLibraryStateView(unavailableLocation: unavailableLocation)
+                        EmptyLibraryStateView(
+                            unavailableLocation: unavailableLocation,
+                            isFiltering: isFiltering,
+                            onRetryUnavailableLocation: onRetryUnavailableLocation
+                        )
                         Spacer(minLength: 24)
                     } else {
                         if viewMode == .grid {
@@ -118,6 +124,9 @@ private struct FloatingViewModeControl: View {
                     }
                 }
                 .accessibilityValue(selection == mode ? "Selected" : "")
+                .accessibilityAddTraits(selection == mode ? [.isSelected] : [])
+                .accessibilityIdentifier("viewMode.\(mode.rawValue.lowercased())")
+                .keyboardShortcut(mode == .grid ? "1" : "2", modifiers: .command)
             }
         }
         .padding(3)
@@ -146,17 +155,19 @@ private extension View {
 
 private struct EmptyLibraryStateView: View {
     let unavailableLocation: LinkedLibraryFolder?
+    let isFiltering: Bool
+    let onRetryUnavailableLocation: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: unavailableLocation == nil ? "photo.on.rectangle.angled" : "externaldrive.badge.xmark")
+            Image(systemName: emptyStateIcon)
                 .font(.system(size: 36, weight: .medium))
                 .foregroundStyle(.secondary)
                 .symbolRenderingMode(.hierarchical)
                 .frame(width: 56, height: 56)
 
             VStack(spacing: 6) {
-                Text(unavailableLocation == nil ? "No images yet" : "Reconnect the drive")
+                Text(emptyStateTitle)
                     .font(.system(size: 22, weight: .semibold))
 
                 Text(emptyStateMessage)
@@ -165,17 +176,41 @@ private struct EmptyLibraryStateView: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
             }
+
+            if unavailableLocation != nil, !isFiltering {
+                Button("Try Again", action: onRetryUnavailableLocation)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
         }
         .padding(.horizontal, 24)
     }
 
     private var emptyStateMessage: String {
+        if isFiltering {
+            return "Try a different name, tag, file type, or clear the active filters."
+        }
         guard let unavailableLocation else {
             return "Link a folder or drop images into a contact sheet to start building a library."
         }
 
+        if unavailableLocation.isICloudDrive {
+            return "Check your network connection and iCloud Drive status, then try again."
+        }
         let driveName = unavailableLocation.volumeName ?? unavailableLocation.name
-        return "Reconnect \(driveName) to restore \(unavailableLocation.name) automatically."
+        return "Reconnect \(driveName) to restore \(unavailableLocation.displayName) automatically."
+    }
+
+    private var emptyStateIcon: String {
+        if isFiltering { return "magnifyingglass" }
+        guard let unavailableLocation else { return "photo.on.rectangle.angled" }
+        return unavailableLocation.isICloudDrive ? "icloud.slash" : "externaldrive.badge.xmark"
+    }
+
+    private var emptyStateTitle: String {
+        if isFiltering { return "No matches" }
+        guard let unavailableLocation else { return "No images yet" }
+        return unavailableLocation.isICloudDrive ? "iCloud Drive unavailable" : "Reconnect the drive"
     }
 }
 
@@ -286,6 +321,7 @@ struct ImageGridView: View {
             }
         }
         .animation(isResizing ? nil : MicroficheMotion.snap, value: thumbnailSize)
+        .accessibilityIdentifier("image.grid")
     }
 
     private func updateColumnCount(for width: CGFloat) {

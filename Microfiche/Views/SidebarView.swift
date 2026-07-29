@@ -15,7 +15,6 @@ struct SidebarView: View {
     let externalVolumes: [RememberedExternalVolume]
     let contactSheets: [ContactSheet]
     let selection: Selection?
-    let onWidthChange: (CGFloat) -> Void
     let onLinkFolder: () -> Void
     let onSelect: (Selection) -> Void
     let onRemoveFolder: (UUID) -> Void
@@ -115,7 +114,7 @@ struct SidebarView: View {
         }
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(WidthReader(onChange: onWidthChange))
+        .accessibilityIdentifier("library.sidebar")
     }
 
     private var folderSectionDetail: String {
@@ -135,6 +134,9 @@ struct SidebarView: View {
 
     private func folderSubtitle(_ folder: LinkedLibraryFolder) -> String? {
         if !folder.isAvailable {
+            if folder.isICloudDrive {
+                return "iCloud unavailable"
+            }
             return folder.isExternal
                 ? "\(folder.volumeName ?? "External drive") • Offline"
                 : "Unavailable"

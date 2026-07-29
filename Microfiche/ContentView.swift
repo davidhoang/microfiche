@@ -69,8 +69,10 @@ struct ContentView: View {
         static let minimumWidth: CGFloat = 240
         static let idealWidth: CGFloat = 280
         static let maximumWidth: CGFloat = 360
-        static let autoCollapseWidth: CGFloat = 220
     }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.toggleSidebar) private var toggleSidebar
 
     @State private var selection: Selection?
     @State private var imageFiles: [ImageFile] = []
@@ -88,13 +90,17 @@ struct ContentView: View {
     @State private var scrollToID: UUID?
     @State private var gridColumnCount: Int = 1
     @State private var detailViewFile: ImageFile?
-    @State private var isMetadataInspectorPresented = true
+    @AppStorage("isMetadataInspectorPresented") private var isMetadataInspectorPresented = true
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
     @State private var externalDriveNotice: String?
+    @State private var searchText = ""
+    @State private var selectedFileType = ""
+    @State private var selectedTag = ""
     @AppStorage("lastSelectedLibraryFolderID") private var lastSelectedLibraryFolderID = ""
     @StateObject private var libraryStorage = LibraryStorage.shared
     @StateObject private var contactSheetStorage = ContactSheetStorage.shared
     @StateObject private var userPreferences = UserPreferences.shared
+    @StateObject private var metadataStore = ImageMetadataStore.shared
 
     let supportedExtensions = ["jpg", "jpeg", "png", "pdf", "svg", "gif", "tiff"]
 
@@ -110,7 +116,6 @@ struct ContentView: View {
                         externalVolumes: libraryStorage.rememberedExternalVolumes,
                         contactSheets: contactSheetStorage.contactSheets,
                         selection: selection,
-                        onWidthChange: handleSidebarWidthChange,
                         onLinkFolder: linkFolder,
                         onSelect: { newSelection in
                             selection = newSelection
@@ -140,10 +145,14 @@ struct ContentView: View {
                         max: SidebarLayout.maximumWidth
                     )
             } detail: {
-                ZStack {
+                NavigationStack {
                     MainContentView(
-                        imageFiles: imageFiles,
+                        imageFiles: displayedImageFiles,
                         unavailableLocation: unavailableSelectedFolder,
+                        isFiltering: hasActiveFilter,
+                        onRetryUnavailableLocation: {
+                            libraryStorage.refreshLocations(saveAfterRefresh: true)
+                        },
                         showsToolbar: detailViewFile == nil,
                         viewMode: $viewMode,
                         gridThumbnailSize: displayedGridThumbnailSize,
@@ -157,20 +166,14 @@ struct ContentView: View {
                         contactSheets: contactSheetStorage.contactSheets,
                         onAddToContactSheet: handleAddToContactSheet
                     )
-                    .opacity(detailViewFile == nil ? 1 : 0)
-                    .allowsHitTesting(detailViewFile == nil)
-                    .accessibilityHidden(detailViewFile != nil)
-
-                    if let detailFile = detailViewFile {
+                    .navigationDestination(item: $detailViewFile) { file in
                         ImageDetailView(
-                            file: detailFile,
+                            file: file,
                             isInspectorPresented: $isMetadataInspectorPresented,
                             onBack: closeImageDetail
                         )
-                        .transition(.opacity)
                     }
                 }
-                .animation(MicroficheMotion.transition, value: detailViewFile?.id)
                 .inspector(isPresented: $isMetadataInspectorPresented) {
                     Group {
                         if let focusedImageFile {
@@ -185,13 +188,22 @@ struct ContentView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .microficheSidebarChrome()
                     .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
                 }
             }
                 .navigationTitle("")
                 .toolbar {
                     if detailViewFile == nil {
+                        ToolbarItem {
+                            Button(action: toggleSidebar) {
+                                Image(systemName: "sidebar.left")
+                            }
+                            .help("Toggle Sidebar")
+                            .accessibilityLabel("Toggle sidebar")
+                            .accessibilityIdentifier("sidebar.toggle")
+                        }
+                        .hideSharedBackgroundIfAvailable()
+
                         ToolbarItem(placement: .principal) {
                             if viewMode == .grid {
                                 HStack(spacing: 6) {
@@ -229,10 +241,18 @@ struct ContentView: View {
                                 Image(systemName: "sidebar.right")
                             }
                             .help(isMetadataInspectorPresented ? "Hide Info" : "Show Info")
+                            .accessibilityLabel(isMetadataInspectorPresented ? "Hide inspector" : "Show inspector")
+                            .accessibilityIdentifier("inspector.toggle")
+                        }
+                        .hideSharedBackgroundIfAvailable()
+
+                        ToolbarItem {
+                            filterMenu
                         }
                         .hideSharedBackgroundIfAvailable()
                     }
                 }
+                .searchable(text: $searchText, placement: .toolbar, prompt: "Search library")
                 .onChange(of: selection) { _, newValue in
                     switch newValue {
                     case .all:
@@ -350,14 +370,79 @@ struct ContentView: View {
         .animation(MicroficheMotion.snap, value: isQuickPreviewPresented)
         .animation(MicroficheMotion.transition, value: userPreferences.isPresentingOnboarding)
         .task {
-            restoreLibrarySelection()
+            if !ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+                restoreLibrarySelection()
+            }
             userPreferences.evaluateLaunchPresentation()
         }
     }
 
     private var focusedImageFile: ImageFile? {
         guard let focusedImageFileID else { return nil }
-        return imageFiles.first { $0.id == focusedImageFileID }
+        return displayedImageFiles.first { $0.id == focusedImageFileID }
+            ?? imageFiles.first { $0.id == focusedImageFileID }
+    }
+
+    private var hasActiveFilter: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !selectedFileType.isEmpty
+            || !selectedTag.isEmpty
+    }
+
+    private var displayedImageFiles: [ImageFile] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return imageFiles.filter { file in
+            let metadata = metadataStore.metadata(for: file.url)
+            return LibraryFiltering.matches(
+                file: file,
+                metadata: metadata,
+                query: query,
+                fileType: selectedFileType,
+                tag: selectedTag
+            )
+        }
+    }
+
+    private var availableFileTypes: [String] {
+        Set(imageFiles.map { $0.url.pathExtension.lowercased() })
+            .filter { !$0.isEmpty }
+            .sorted()
+    }
+
+    private var availableTags: [String] {
+        metadataStore.allTags(for: imageFiles.map(\.url))
+    }
+
+    private var filterMenu: some View {
+        Menu {
+            Picker("File Type", selection: $selectedFileType) {
+                Text("All File Types").tag("")
+                ForEach(availableFileTypes, id: \.self) { fileType in
+                    Text(fileType.uppercased()).tag(fileType)
+                }
+            }
+
+            Picker("Tag", selection: $selectedTag) {
+                Text("All Tags").tag("")
+                ForEach(availableTags, id: \.self) { tag in
+                    Text(tag).tag(tag)
+                }
+            }
+
+            Divider()
+            Button("Clear Filters") {
+                selectedFileType = ""
+                selectedTag = ""
+                searchText = ""
+            }
+            .disabled(!hasActiveFilter)
+        } label: {
+            Image(systemName: hasActiveFilter ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+        }
+        .help("Filter Library")
+        .accessibilityLabel("Filter library")
+        .accessibilityValue(hasActiveFilter ? "Filters active" : "No filters")
+        .accessibilityIdentifier("library.filter")
     }
 
     private var unavailableSelectedFolder: LinkedLibraryFolder? {
@@ -455,16 +540,6 @@ struct ContentView: View {
         }
     }
 
-    private func handleSidebarWidthChange(_ width: CGFloat) {
-        guard splitViewVisibility != .detailOnly else { return }
-
-        if width < SidebarLayout.autoCollapseWidth {
-            withAnimation(MicroficheMotion.transition) {
-                splitViewVisibility = .detailOnly
-            }
-        }
-    }
-
     // MARK: - Contact Sheets
 
     private func handleDropToContactSheet(sheetID: UUID, urls: [URL]) {
@@ -526,14 +601,14 @@ struct ContentView: View {
 
         if NSApp.currentEvent?.modifierFlags.contains(.shift) == true,
            let lastID = focusedImageFileID,
-           let lastIndex = imageFiles.firstIndex(where: { $0.id == lastID }),
-           let currentIndex = imageFiles.firstIndex(where: { $0.id == fileID }) {
+           let lastIndex = displayedImageFiles.firstIndex(where: { $0.id == lastID }),
+           let currentIndex = displayedImageFiles.firstIndex(where: { $0.id == fileID }) {
             let range = min(lastIndex, currentIndex)...max(lastIndex, currentIndex)
-            selectedImageFileIDs = Set(imageFiles[range].map { $0.id })
+            selectedImageFileIDs = Set(displayedImageFiles[range].map { $0.id })
         } else if NSApp.currentEvent?.modifierFlags.contains(.command) == true {
             if selectedImageFileIDs.contains(fileID) {
                 selectedImageFileIDs.remove(fileID)
-                nextFocusedID = imageFiles.first {
+                nextFocusedID = displayedImageFiles.first {
                     selectedImageFileIDs.contains($0.id)
                 }?.id
             } else {
@@ -544,26 +619,22 @@ struct ContentView: View {
         }
         focusedImageFileID = nextFocusedID
 
-        if let file = imageFiles.first(where: { $0.id == fileID }) {
+        if let file = displayedImageFiles.first(where: { $0.id == fileID }) {
             PreviewImageCache.shared.preloadImage(for: file.url)
         }
     }
 
     private func handleDoubleClickImage(for fileID: UUID) {
-        if let file = imageFiles.first(where: { $0.id == fileID }) {
+        if let file = displayedImageFiles.first(where: { $0.id == fileID }) {
             isQuickPreviewPresented = false
             selectedImageFileIDs = [fileID]
             focusedImageFileID = fileID
-            withAnimation(MicroficheMotion.transition) {
-                detailViewFile = file
-                // Keep the metadata inspector available for editing Finder labels/tags.
-                isMetadataInspectorPresented = true
-            }
+            detailViewFile = file
         }
     }
 
     private func closeImageDetail() {
-        withAnimation(MicroficheMotion.transition) {
+        withAnimation(MicroficheMotion.transition(reducedMotion: reduceMotion)) {
             detailViewFile = nil
         }
         requestScrollToFocusedImage()
@@ -669,11 +740,12 @@ struct ContentView: View {
     // MARK: - Navigation
 
     private func handleArrowKey(_ direction: ArrowDirection) {
-        guard !imageFiles.isEmpty else { return }
+        let navigableFiles = displayedImageFiles
+        guard !navigableFiles.isEmpty else { return }
 
         guard let currentFocusedID = focusedImageFileID,
-              let currentIndex = imageFiles.firstIndex(where: { $0.id == currentFocusedID }) else {
-            if let firstFile = imageFiles.first {
+              let currentIndex = navigableFiles.firstIndex(where: { $0.id == currentFocusedID }) else {
+            if let firstFile = navigableFiles.first {
                 selectedImageFileIDs = [firstFile.id]
                 self.focusedImageFileID = firstFile.id
                 scrollToID = firstFile.id
@@ -683,7 +755,7 @@ struct ContentView: View {
 
         guard let nextIndex = nextImageIndex(from: currentIndex, direction: direction) else { return }
 
-        let nextFile = imageFiles[nextIndex]
+        let nextFile = navigableFiles[nextIndex]
         if isQuickPreviewPresented || detailViewFile != nil {
             selectedImageFileIDs = [nextFile.id]
         } else if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
@@ -702,7 +774,7 @@ struct ContentView: View {
     private func nextImageIndex(from currentIndex: Int, direction: ArrowDirection) -> Int? {
         ImageNavigation.nextIndex(
             from: currentIndex,
-            itemCount: imageFiles.count,
+            itemCount: displayedImageFiles.count,
             direction: direction,
             viewMode: viewMode,
             gridColumnCount: gridColumnCount

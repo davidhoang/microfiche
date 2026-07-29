@@ -53,9 +53,9 @@ Rules derived from `ContentView`, `SidebarView`, and `ImageDetailView`.
 1. **Two-column shell + inspector** — Use `NavigationSplitView` (sidebar + detail). Metadata lives in a detail-attached `.inspector`, not a third permanent split column.
 2. **Sidebar owns library location** — Selection is a single enum: All Images, Folder, or Contact Sheet. External drive rows are status only — not navigation targets.
 3. **Location change clears browsing state** — On library selection change, clear image selection, focus, quick preview, and detail view.
-4. **Detail is a canvas overlay** — Double-click opens `ImageDetailView` over the library detail column (opacity / hit-testing), not a pushed navigation destination or new column.
+4. **Detail pushes on the detail stack** — Double-click opens `ImageDetailView` via `NavigationStack` + `navigationDestination`, not an opacity overlay or new split column.
 5. **Inspector stays with detail** — Entering detail keeps the metadata inspector available so Finder labels, tags, and comments can be edited while viewing.
-6. **Sidebar is collapsible** — Width 240–360 (ideal 280). Auto-collapse to `.detailOnly` below 220 pt measured width.
+6. **Sidebar is collapsible** — Width 240–360 (ideal 280). Use the system split-view divider and sidebar toggle; do not programmatically override `columnVisibility` during resize.
 7. **Unified chrome** — Window uses unified toolbar with no title. Keep `.navigationTitle("")` unless a mode truly needs a title.
 8. **Window scale** — Minimum about 1100×700; default launch size stays large enough for sidebar + grid + inspector.
 
@@ -190,7 +190,7 @@ Disable animations while the grid size slider is dragging. Prefer `MicroficheMot
 
 ### Sidebar
 - **File:** `Microfiche/Views/SidebarView.swift`
-- Custom scroll sections; width reported via `WidthReader`
+- Custom scroll sections; collapsible via the system split-view divider and sidebar toggle
 
 ### Library canvas
 - **File:** `Microfiche/Views/MainContentView.swift`
