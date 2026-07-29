@@ -93,10 +93,14 @@ struct ContentView: View {
     @AppStorage("isMetadataInspectorPresented") private var isMetadataInspectorPresented = true
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
     @State private var externalDriveNotice: String?
+    @State private var searchText = ""
+    @State private var selectedFileType = ""
+    @State private var selectedTag = ""
     @AppStorage("lastSelectedLibraryFolderID") private var lastSelectedLibraryFolderID = ""
     @StateObject private var libraryStorage = LibraryStorage.shared
     @StateObject private var contactSheetStorage = ContactSheetStorage.shared
     @StateObject private var userPreferences = UserPreferences.shared
+    @StateObject private var metadataStore = ImageMetadataStore.shared
 
     let supportedExtensions = ["jpg", "jpeg", "png", "pdf", "svg", "gif", "tiff"]
 
@@ -143,8 +147,12 @@ struct ContentView: View {
             } detail: {
                 NavigationStack {
                     MainContentView(
-                        imageFiles: imageFiles,
+                        imageFiles: displayedImageFiles,
                         unavailableLocation: unavailableSelectedFolder,
+                        isFiltering: hasActiveFilter,
+                        onRetryUnavailableLocation: {
+                            libraryStorage.refreshLocations(saveAfterRefresh: true)
+                        },
                         showsToolbar: detailViewFile == nil,
                         viewMode: $viewMode,
                         gridThumbnailSize: displayedGridThumbnailSize,
@@ -237,8 +245,14 @@ struct ContentView: View {
                             .accessibilityIdentifier("inspector.toggle")
                         }
                         .hideSharedBackgroundIfAvailable()
+
+                        ToolbarItem {
+                            filterMenu
+                        }
+                        .hideSharedBackgroundIfAvailable()
                     }
                 }
+                .searchable(text: $searchText, placement: .toolbar, prompt: "Search library")
                 .onChange(of: selection) { _, newValue in
                     switch newValue {
                     case .all:
@@ -356,14 +370,79 @@ struct ContentView: View {
         .animation(MicroficheMotion.snap, value: isQuickPreviewPresented)
         .animation(MicroficheMotion.transition, value: userPreferences.isPresentingOnboarding)
         .task {
-            restoreLibrarySelection()
+            if !ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+                restoreLibrarySelection()
+            }
             userPreferences.evaluateLaunchPresentation()
         }
     }
 
     private var focusedImageFile: ImageFile? {
         guard let focusedImageFileID else { return nil }
-        return imageFiles.first { $0.id == focusedImageFileID }
+        return displayedImageFiles.first { $0.id == focusedImageFileID }
+            ?? imageFiles.first { $0.id == focusedImageFileID }
+    }
+
+    private var hasActiveFilter: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !selectedFileType.isEmpty
+            || !selectedTag.isEmpty
+    }
+
+    private var displayedImageFiles: [ImageFile] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return imageFiles.filter { file in
+            let metadata = metadataStore.metadata(for: file.url)
+            return LibraryFiltering.matches(
+                file: file,
+                metadata: metadata,
+                query: query,
+                fileType: selectedFileType,
+                tag: selectedTag
+            )
+        }
+    }
+
+    private var availableFileTypes: [String] {
+        Set(imageFiles.map { $0.url.pathExtension.lowercased() })
+            .filter { !$0.isEmpty }
+            .sorted()
+    }
+
+    private var availableTags: [String] {
+        metadataStore.allTags(for: imageFiles.map(\.url))
+    }
+
+    private var filterMenu: some View {
+        Menu {
+            Picker("File Type", selection: $selectedFileType) {
+                Text("All File Types").tag("")
+                ForEach(availableFileTypes, id: \.self) { fileType in
+                    Text(fileType.uppercased()).tag(fileType)
+                }
+            }
+
+            Picker("Tag", selection: $selectedTag) {
+                Text("All Tags").tag("")
+                ForEach(availableTags, id: \.self) { tag in
+                    Text(tag).tag(tag)
+                }
+            }
+
+            Divider()
+            Button("Clear Filters") {
+                selectedFileType = ""
+                selectedTag = ""
+                searchText = ""
+            }
+            .disabled(!hasActiveFilter)
+        } label: {
+            Image(systemName: hasActiveFilter ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+        }
+        .help("Filter Library")
+        .accessibilityLabel("Filter library")
+        .accessibilityValue(hasActiveFilter ? "Filters active" : "No filters")
+        .accessibilityIdentifier("library.filter")
     }
 
     private var unavailableSelectedFolder: LinkedLibraryFolder? {
@@ -522,14 +601,14 @@ struct ContentView: View {
 
         if NSApp.currentEvent?.modifierFlags.contains(.shift) == true,
            let lastID = focusedImageFileID,
-           let lastIndex = imageFiles.firstIndex(where: { $0.id == lastID }),
-           let currentIndex = imageFiles.firstIndex(where: { $0.id == fileID }) {
+           let lastIndex = displayedImageFiles.firstIndex(where: { $0.id == lastID }),
+           let currentIndex = displayedImageFiles.firstIndex(where: { $0.id == fileID }) {
             let range = min(lastIndex, currentIndex)...max(lastIndex, currentIndex)
-            selectedImageFileIDs = Set(imageFiles[range].map { $0.id })
+            selectedImageFileIDs = Set(displayedImageFiles[range].map { $0.id })
         } else if NSApp.currentEvent?.modifierFlags.contains(.command) == true {
             if selectedImageFileIDs.contains(fileID) {
                 selectedImageFileIDs.remove(fileID)
-                nextFocusedID = imageFiles.first {
+                nextFocusedID = displayedImageFiles.first {
                     selectedImageFileIDs.contains($0.id)
                 }?.id
             } else {
@@ -540,13 +619,13 @@ struct ContentView: View {
         }
         focusedImageFileID = nextFocusedID
 
-        if let file = imageFiles.first(where: { $0.id == fileID }) {
+        if let file = displayedImageFiles.first(where: { $0.id == fileID }) {
             PreviewImageCache.shared.preloadImage(for: file.url)
         }
     }
 
     private func handleDoubleClickImage(for fileID: UUID) {
-        if let file = imageFiles.first(where: { $0.id == fileID }) {
+        if let file = displayedImageFiles.first(where: { $0.id == fileID }) {
             isQuickPreviewPresented = false
             selectedImageFileIDs = [fileID]
             focusedImageFileID = fileID
@@ -661,11 +740,12 @@ struct ContentView: View {
     // MARK: - Navigation
 
     private func handleArrowKey(_ direction: ArrowDirection) {
-        guard !imageFiles.isEmpty else { return }
+        let navigableFiles = displayedImageFiles
+        guard !navigableFiles.isEmpty else { return }
 
         guard let currentFocusedID = focusedImageFileID,
-              let currentIndex = imageFiles.firstIndex(where: { $0.id == currentFocusedID }) else {
-            if let firstFile = imageFiles.first {
+              let currentIndex = navigableFiles.firstIndex(where: { $0.id == currentFocusedID }) else {
+            if let firstFile = navigableFiles.first {
                 selectedImageFileIDs = [firstFile.id]
                 self.focusedImageFileID = firstFile.id
                 scrollToID = firstFile.id
@@ -675,7 +755,7 @@ struct ContentView: View {
 
         guard let nextIndex = nextImageIndex(from: currentIndex, direction: direction) else { return }
 
-        let nextFile = imageFiles[nextIndex]
+        let nextFile = navigableFiles[nextIndex]
         if isQuickPreviewPresented || detailViewFile != nil {
             selectedImageFileIDs = [nextFile.id]
         } else if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
@@ -694,7 +774,7 @@ struct ContentView: View {
     private func nextImageIndex(from currentIndex: Int, direction: ArrowDirection) -> Int? {
         ImageNavigation.nextIndex(
             from: currentIndex,
-            itemCount: imageFiles.count,
+            itemCount: displayedImageFiles.count,
             direction: direction,
             viewMode: viewMode,
             gridColumnCount: gridColumnCount
