@@ -100,6 +100,8 @@ private struct ImageCellClickMonitor: NSViewRepresentable {
 struct MainContentView: View {
     let imageFiles: [ImageFile]
     let unavailableLocation: LinkedLibraryFolder?
+    let isFiltering: Bool
+    let onRetryUnavailableLocation: () -> Void
     let showsToolbar: Bool
     @Binding var viewMode: ViewMode
     let gridThumbnailSize: CGFloat
@@ -131,7 +133,9 @@ struct MainContentView: View {
                         Spacer(minLength: 24)
                         EmptyLibraryStateView(
                             unavailableLocation: unavailableLocation,
-                            activeContactSheet: activeContactSheet
+                            activeContactSheet: activeContactSheet,
+                            isFiltering: isFiltering,
+                            onRetryUnavailableLocation: onRetryUnavailableLocation
                         )
                         Spacer(minLength: 24)
                     } else {
@@ -240,6 +244,9 @@ private struct FloatingViewModeControl: View {
                     }
                 }
                 .accessibilityValue(selection == mode ? "Selected" : "")
+                .accessibilityAddTraits(selection == mode ? [.isSelected] : [])
+                .accessibilityIdentifier("viewMode.\(mode.rawValue.lowercased())")
+                .keyboardShortcut(mode == .grid ? "1" : "2", modifiers: .command)
             }
         }
         .padding(3)
@@ -269,6 +276,8 @@ private extension View {
 private struct EmptyLibraryStateView: View {
     let unavailableLocation: LinkedLibraryFolder?
     let activeContactSheet: ContactSheet?
+    let isFiltering: Bool
+    let onRetryUnavailableLocation: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
@@ -288,11 +297,20 @@ private struct EmptyLibraryStateView: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
             }
+
+            if unavailableLocation != nil, !isFiltering {
+                Button("Try Again", action: onRetryUnavailableLocation)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
         }
         .padding(.horizontal, 24)
     }
 
     private var emptyStateMessage: String {
+        if isFiltering {
+            return "Try a different name, tag, file type, or clear the active filters."
+        }
         if let activeContactSheet {
             return "Drag image files into \(activeContactSheet.name) or drop them on its sidebar item."
         }
@@ -300,18 +318,25 @@ private struct EmptyLibraryStateView: View {
             return "Link a folder or drop images into a contact sheet to start building a library."
         }
 
+        if unavailableLocation.isICloudDrive {
+            return "Check your network connection and iCloud Drive status, then try again."
+        }
         let driveName = unavailableLocation.volumeName ?? unavailableLocation.name
-        return "Reconnect \(driveName) to restore \(unavailableLocation.name) automatically."
-    }
-
-    private var emptyStateTitle: String {
-        if activeContactSheet != nil { return "Drop images here" }
-        return unavailableLocation == nil ? "No images yet" : "Reconnect the drive"
+        return "Reconnect \(driveName) to restore \(unavailableLocation.displayName) automatically."
     }
 
     private var emptyStateIcon: String {
+        if isFiltering { return "magnifyingglass" }
         if activeContactSheet != nil { return "photo.badge.plus" }
-        return unavailableLocation == nil ? "photo.on.rectangle.angled" : "externaldrive.badge.xmark"
+        guard let unavailableLocation else { return "photo.on.rectangle.angled" }
+        return unavailableLocation.isICloudDrive ? "icloud.slash" : "externaldrive.badge.xmark"
+    }
+
+    private var emptyStateTitle: String {
+        if isFiltering { return "No matches" }
+        if activeContactSheet != nil { return "Drop images here" }
+        guard let unavailableLocation else { return "No images yet" }
+        return unavailableLocation.isICloudDrive ? "iCloud Drive unavailable" : "Reconnect the drive"
     }
 }
 
@@ -446,6 +471,7 @@ struct ImageGridView: View {
             }
         }
         .animation(isResizing ? nil : MicroficheMotion.snap, value: thumbnailSize)
+        .accessibilityIdentifier("image.grid")
     }
 
     private func updateColumnCount(for width: CGFloat) {

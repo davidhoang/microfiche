@@ -137,6 +137,9 @@ struct SidebarView: View {
 
     private func folderSubtitle(_ folder: LinkedLibraryFolder) -> String? {
         if !folder.isAvailable {
+            if folder.isICloudDrive {
+                return "iCloud unavailable"
+            }
             return folder.isExternal
                 ? "\(folder.volumeName ?? "External drive") • Offline"
                 : "Unavailable"
