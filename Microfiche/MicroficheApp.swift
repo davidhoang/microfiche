@@ -29,6 +29,11 @@ struct MicroficheApp: App {
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             CommandGroup(after: .newItem) {
+                Button("Move to Archive") {
+                    NotificationCenter.default.post(name: .microficheMoveSelectionToArchive, object: nil)
+                }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+
                 Divider()
                 Button("Clear Image Cache") {
                     ImageCache.shared.clearCache()

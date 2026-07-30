@@ -121,6 +121,7 @@ Handled by `KeyboardEventHandlingView` when a text field is not first responder.
 | Esc | Detail → quick preview → clear selection (in that order) |
 | Delete | Move selection to Trash (confirm unless bypassed) |
 | ⌘/⇧+Delete | Bypass delete confirmation |
+| ⌘⇧A | Move selection to Archive (prompts for folder if unset) |
 
 Don’t steal keys while the user is editing text.
 
@@ -181,8 +182,9 @@ Disable animations while the grid size slider is dragging. Prefer `MicroficheMot
 
 1. **Images drag as file URLs** from grid and list.
 2. **Contact sheets are drop targets** — Accent border while targeted; accept image file URLs.
-3. **Grid context menu** — “Add to Contact Sheet” when sheets exist. Keep list parity when adding menu actions.
-4. **Destructive actions stay in context menus** — Don’t put Remove/Forget/Delete in the always-visible chrome.
+3. **Grid and list context menus** — “Add to Contact Sheet” when sheets exist, plus “Move to Archive”.
+4. **Archive** — Moves selected originals into a user-chosen folder (Settings → Archive, or prompted on first use). Menu: **File → Move to Archive** (⌘⇧A). Local Microfiche metadata follows the move.
+5. **Destructive actions stay in context menus** — Don’t put Remove/Forget/Delete in the always-visible chrome.
 
 ---
 
@@ -214,11 +216,14 @@ Disable animations while the grid size slider is dragging. Prefer `MicroficheMot
 - Shows once until completed/skipped when **Settings → Onboarding → Show welcome onboarding** is on.
 - Testing: toggle the setting off to suppress; use **Replay Onboarding** or **Help → Replay Welcome Onboarding** to walk through again.
 
+### Archive folder
+- **Files:** `Services/ArchiveFolderStore.swift`, `Services/FileArchiver.swift`, `SettingsView.swift`
+- Security-scoped bookmark for the destination folder; collision-safe rename on move.
+
 ---
 
 ## Future Enhancements
 
 - Propagate Reduce Motion to all `MicroficheMotion` call sites
 - Keyboard focus ring that matches selection chrome
-- List view parity for “Add to Contact Sheet”
 - Retire or wire unused helpers (`microficheToolbarChrome`, `sidebarSelectionBackground`) deliberately

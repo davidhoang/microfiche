@@ -25,6 +25,7 @@ struct MainContentView: View {
     let onRename: (URL, String) -> Void
     let contactSheets: [ContactSheet]
     let onAddToContactSheet: (UUID, URL) -> Void
+    let onArchive: (ImageFile) -> Void
     var body: some View {
         ZStack {
             mainCanvasBackground
@@ -52,7 +53,8 @@ struct MainContentView: View {
                                 columnCount: $gridColumnCount,
                                 onRename: onRename,
                                 contactSheets: contactSheets,
-                                onAddToContactSheet: onAddToContactSheet
+                                onAddToContactSheet: onAddToContactSheet,
+                                onArchive: onArchive
                             )
                         } else {
                             ImageListView(
@@ -61,7 +63,10 @@ struct MainContentView: View {
                                 onSelectImage: onSelectImage,
                                 onDoubleClickImage: onDoubleClickImage,
                                 scrollToID: $scrollToID,
-                                onRename: onRename
+                                onRename: onRename,
+                                contactSheets: contactSheets,
+                                onAddToContactSheet: onAddToContactSheet,
+                                onArchive: onArchive
                             )
                         }
                     }
@@ -214,6 +219,7 @@ struct ImageGridView: View {
     let onRename: (URL, String) -> Void
     let contactSheets: [ContactSheet]
     let onAddToContactSheet: (UUID, URL) -> Void
+    let onArchive: (ImageFile) -> Void
 
     var body: some View {
         GeometryReader { geometry in
@@ -238,7 +244,8 @@ struct ImageGridView: View {
                                 onDoubleClickImage: onDoubleClickImage,
                                 onRename: onRename,
                                 contactSheets: contactSheets,
-                                onAddToContactSheet: onAddToContactSheet
+                                onAddToContactSheet: onAddToContactSheet,
+                                onArchive: onArchive
                             )
                             .id(file.id)
                             .onAppear {
@@ -317,6 +324,7 @@ struct GridCell: View {
     let onRename: (URL, String) -> Void
     let contactSheets: [ContactSheet]
     let onAddToContactSheet: (UUID, URL) -> Void
+    let onArchive: (ImageFile) -> Void
     @State private var isHovered = false
 
     var body: some View {
@@ -347,17 +355,12 @@ struct GridCell: View {
         .onDrag {
             imageFileProvider(for: file.url)
         }
-        .contextMenu {
-            if !contactSheets.isEmpty {
-                Menu("Add to Contact Sheet") {
-                    ForEach(contactSheets) { sheet in
-                        Button(sheet.name) {
-                            onAddToContactSheet(sheet.id, file.url)
-                        }
-                    }
-                }
-            }
-        }
+        .imageLibraryContextMenu(
+            file: file,
+            contactSheets: contactSheets,
+            onAddToContactSheet: onAddToContactSheet,
+            onArchive: onArchive
+        )
     }
 }
 
@@ -370,6 +373,9 @@ struct ImageListView: View {
     let onDoubleClickImage: (UUID) -> Void
     @Binding var scrollToID: UUID?
     let onRename: (URL, String) -> Void
+    let contactSheets: [ContactSheet]
+    let onAddToContactSheet: (UUID, URL) -> Void
+    let onArchive: (ImageFile) -> Void
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -381,7 +387,10 @@ struct ImageListView: View {
                             isSelected: selectedImageFileIDs.contains(file.id),
                             onSelectImage: onSelectImage,
                             onDoubleClickImage: onDoubleClickImage,
-                            onRename: onRename
+                            onRename: onRename,
+                            contactSheets: contactSheets,
+                            onAddToContactSheet: onAddToContactSheet,
+                            onArchive: onArchive
                         )
                         .id(file.id)
                         .onAppear {
@@ -417,6 +426,9 @@ struct ImageListRow: View {
     let onSelectImage: (UUID) -> Void
     let onDoubleClickImage: (UUID) -> Void
     let onRename: (URL, String) -> Void
+    let contactSheets: [ContactSheet]
+    let onAddToContactSheet: (UUID, URL) -> Void
+    let onArchive: (ImageFile) -> Void
     @State private var isHovered = false
 
     var body: some View {
@@ -457,6 +469,12 @@ struct ImageListRow: View {
         .onDrag {
             imageFileProvider(for: file.url)
         }
+        .imageLibraryContextMenu(
+            file: file,
+            contactSheets: contactSheets,
+            onAddToContactSheet: onAddToContactSheet,
+            onArchive: onArchive
+        )
         .simultaneousGesture(
             TapGesture(count: 1)
                 .onEnded { _ in onSelectImage(file.id) }
@@ -465,6 +483,32 @@ struct ImageListRow: View {
             TapGesture(count: 2)
                 .onEnded { _ in onDoubleClickImage(file.id) }
         )
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func imageLibraryContextMenu(
+        file: ImageFile,
+        contactSheets: [ContactSheet],
+        onAddToContactSheet: @escaping (UUID, URL) -> Void,
+        onArchive: @escaping (ImageFile) -> Void
+    ) -> some View {
+        contextMenu {
+            if !contactSheets.isEmpty {
+                Menu("Add to Contact Sheet") {
+                    ForEach(contactSheets) { sheet in
+                        Button(sheet.name) {
+                            onAddToContactSheet(sheet.id, file.url)
+                        }
+                    }
+                }
+            }
+
+            Button("Move to Archive") {
+                onArchive(file)
+            }
+        }
     }
 }
 
