@@ -510,4 +510,76 @@ final class MicroficheTests: XCTestCase {
         XCTAssertTrue(steps.allSatisfy { !$0.title.isEmpty && !$0.message.isEmpty && !$0.symbolName.isEmpty })
     }
 
+    func testFileArchiverUniqueDestinationAvoidsCollisions() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-archive-\(UUID().uuidString)", isDirectory: true)
+        let directory = root.appendingPathComponent("archive", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let source = root.appendingPathComponent("photo.png")
+        try Data([0x89, 0x50, 0x4E, 0x47]).write(to: source)
+
+        let first = FileArchiver.uniqueDestination(for: source, in: directory, fileManager: fileManager)
+        XCTAssertEqual(first.lastPathComponent, "photo.png")
+
+        try Data([0x01]).write(to: first)
+        let second = FileArchiver.uniqueDestination(for: source, in: directory, fileManager: fileManager)
+        XCTAssertEqual(second.lastPathComponent, "photo-1.png")
+
+        try Data([0x02]).write(to: second)
+        let third = FileArchiver.uniqueDestination(for: source, in: directory, fileManager: fileManager)
+        XCTAssertEqual(third.lastPathComponent, "photo-2.png")
+    }
+
+    func testFileArchiverMovesIntoArchiveFolder() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-archive-move-\(UUID().uuidString)", isDirectory: true)
+        let library = root.appendingPathComponent("library", isDirectory: true)
+        let archive = root.appendingPathComponent("archive", isDirectory: true)
+        try fileManager.createDirectory(at: library, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: archive, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let source = library.appendingPathComponent("keep.png")
+        try Data([0x89, 0x50, 0x4E, 0x47]).write(to: source)
+
+        let destination = try FileArchiver.move(source, intoArchive: archive, fileManager: fileManager)
+        XCTAssertEqual(destination.deletingLastPathComponent(), archive)
+        XCTAssertFalse(fileManager.fileExists(atPath: source.path))
+        XCTAssertTrue(fileManager.fileExists(atPath: destination.path))
+    }
+
+    @MainActor
+    func testArchiveFolderStorePersistsChosenFolder() throws {
+        let suiteName = "microfiche.tests.archive-folder.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let fileManager = FileManager.default
+        let folder = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-archive-store-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: folder) }
+
+        let store = ArchiveFolderStore(defaults: defaults, fileManager: fileManager)
+        XCTAssertFalse(store.hasConfiguredFolder)
+
+        XCTAssertTrue(store.setFolder(folder))
+        XCTAssertTrue(store.hasConfiguredFolder)
+        XCTAssertTrue(store.isAvailable)
+        XCTAssertEqual(store.displayName, folder.lastPathComponent)
+        XCTAssertEqual(store.resolvedURL()?.path, folder.path)
+
+        let restored = ArchiveFolderStore(defaults: defaults, fileManager: fileManager)
+        XCTAssertTrue(restored.hasConfiguredFolder)
+        XCTAssertEqual(restored.resolvedURL()?.path, folder.path)
+
+        restored.clearFolder()
+        XCTAssertFalse(restored.hasConfiguredFolder)
+        XCTAssertNil(restored.resolvedURL())
+    }
+
 }

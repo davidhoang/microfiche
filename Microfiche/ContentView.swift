@@ -36,6 +36,10 @@ enum ArrowDirection {
     case up, down, left, right
 }
 
+extension Notification.Name {
+    static let microficheMoveSelectionToArchive = Notification.Name("microficheMoveSelectionToArchive")
+}
+
 enum ImageNavigation {
     static func nextIndex(
         from currentIndex: Int,
@@ -84,6 +88,9 @@ struct ContentView: View {
     @State private var showDeleteAlert: Bool = false
     @State private var dontAskAgain: Bool = UserDefaults.standard.bool(forKey: "dontAskDeleteConfirm")
     @State private var pendingDeleteFiles: [ImageFile] = []
+    @State private var showChooseArchiveAlert = false
+    @State private var pendingArchiveFiles: [ImageFile] = []
+    @State private var archiveErrorMessage: String?
     @State private var isQuickPreviewPresented = false
     @State private var scrollToID: UUID?
     @State private var gridColumnCount: Int = 1
@@ -95,6 +102,7 @@ struct ContentView: View {
     @StateObject private var libraryStorage = LibraryStorage.shared
     @StateObject private var contactSheetStorage = ContactSheetStorage.shared
     @StateObject private var userPreferences = UserPreferences.shared
+    @StateObject private var archiveFolderStore = ArchiveFolderStore.shared
 
     let supportedExtensions = ["jpg", "jpeg", "png", "pdf", "svg", "gif", "tiff"]
 
@@ -155,7 +163,8 @@ struct ContentView: View {
                         scrollToID: $scrollToID,
                         onRename: renameFile,
                         contactSheets: contactSheetStorage.contactSheets,
-                        onAddToContactSheet: handleAddToContactSheet
+                        onAddToContactSheet: handleAddToContactSheet,
+                        onArchive: handleArchiveRequest(for:)
                     )
                     .opacity(detailViewFile == nil ? 1 : 0)
                     .allowsHitTesting(detailViewFile == nil)
@@ -266,6 +275,17 @@ struct ContentView: View {
                         pendingDeleteFiles = []
                     }
                 }
+                .onChange(of: showChooseArchiveAlert) { _, isShowing in
+                    if !isShowing, archiveFolderStore.resolvedURL() == nil {
+                        pendingArchiveFiles = []
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .microficheMoveSelectionToArchive)) { _ in
+                    guard !userPreferences.isPresentingOnboarding else { return }
+                    let selected = imageFiles.filter { selectedImageFileIDs.contains($0.id) }
+                    guard !selected.isEmpty else { return }
+                    requestArchive(for: selected)
+                }
                 .background(KeyboardEventHandlingView(
                     onDeletePressed: { bypassConfirmation in
                         guard !userPreferences.isPresentingOnboarding else { return }
@@ -327,6 +347,32 @@ struct ContentView: View {
                     Button("OK") { externalDriveNotice = nil }
                 } message: {
                     Text(externalDriveNotice ?? "")
+                }
+                .alert("Choose Archive Folder", isPresented: $showChooseArchiveAlert) {
+                    Button("Choose…") {
+                        if archiveFolderStore.chooseFolder() {
+                            moveFilesToArchive(pendingArchiveFiles)
+                        }
+                        pendingArchiveFiles = []
+                    }
+                    .keyboardShortcut(.defaultAction)
+
+                    Button("Cancel", role: .cancel) {
+                        pendingArchiveFiles = []
+                    }
+                } message: {
+                    Text("Pick a folder where Microfiche should move archived images.")
+                }
+                .alert(
+                    "Couldn’t Archive",
+                    isPresented: Binding(
+                        get: { archiveErrorMessage != nil },
+                        set: { if !$0 { archiveErrorMessage = nil } }
+                    )
+                ) {
+                    Button("OK") { archiveErrorMessage = nil }
+                } message: {
+                    Text(archiveErrorMessage ?? "")
                 }
 
                 if isQuickPreviewPresented, let file = focusedImageFile {
@@ -569,6 +615,91 @@ struct ContentView: View {
         requestScrollToFocusedImage()
     }
 
+    // MARK: - Archive
+
+    private func handleArchiveRequest(for file: ImageFile) {
+        if selectedImageFileIDs.contains(file.id), selectedImageFileIDs.count > 1 {
+            let selected = imageFiles.filter { selectedImageFileIDs.contains($0.id) }
+            requestArchive(for: selected)
+        } else {
+            requestArchive(for: [file])
+        }
+    }
+
+    private func requestArchive(for files: [ImageFile]) {
+        guard !files.isEmpty else { return }
+
+        if archiveFolderStore.resolvedURL() != nil {
+            moveFilesToArchive(files)
+            return
+        }
+
+        pendingArchiveFiles = files
+        showChooseArchiveAlert = true
+    }
+
+    private func moveFilesToArchive(_ files: [ImageFile]) {
+        guard let archiveURL = archiveFolderStore.resolvedURL() else {
+            pendingArchiveFiles = files
+            showChooseArchiveAlert = true
+            return
+        }
+
+        let archivedIDs = Set(files.map(\.id))
+        let deletedDetailIndex = detailViewFile.flatMap { detailFile in
+            archivedIDs.contains(detailFile.id)
+                ? imageFiles.firstIndex(where: { $0.id == detailFile.id })
+                : nil
+        }
+        let wasPreviewedArchived = isQuickPreviewPresented
+            && focusedImageFileID.map(archivedIDs.contains) == true
+        var previewIndex: Int?
+        if wasPreviewedArchived,
+           let focusedImageFileID,
+           let idx = imageFiles.firstIndex(where: { $0.id == focusedImageFileID }) {
+            previewIndex = idx
+        }
+        let originalFilesSnapshot = imageFiles
+        let anchorIndexBeforeArchive: Int? = files
+            .compactMap { file in originalFilesSnapshot.firstIndex(of: file) }
+            .min()
+
+        var movedCount = 0
+        var lastError: Error?
+
+        for file in files {
+            do {
+                let destination = try FileArchiver.move(file.url, intoArchive: archiveURL)
+                ImageMetadataStore.shared.move(from: file.url, to: destination)
+                ImageCache.shared.clearCacheForFile(at: file.url)
+                PreviewImageCache.shared.clearCacheForFile(at: file.url)
+                imageFiles.removeAll { $0.id == file.id }
+                selectedImageFileIDs.remove(file.id)
+                movedCount += 1
+            } catch {
+                lastError = error
+                print("Error archiving file: \(error)")
+            }
+        }
+
+        if movedCount == 0 {
+            archiveErrorMessage = lastError?.localizedDescription
+                ?? "Unable to move the selected images to the archive folder."
+            return
+        }
+
+        if movedCount < files.count {
+            archiveErrorMessage = "Moved \(movedCount) of \(files.count) images. \(lastError?.localizedDescription ?? "Some files could not be archived.")"
+        }
+
+        updateFocusAfterRemovingFiles(
+            removedDetailIndex: deletedDetailIndex,
+            wasPreviewedRemoved: wasPreviewedArchived,
+            previewIndex: previewIndex,
+            anchorIndexBeforeRemoval: anchorIndexBeforeArchive
+        )
+    }
+
     // MARK: - Delete
 
     private func moveFilesToTrash(_ files: [ImageFile]) {
@@ -608,8 +739,22 @@ struct ContentView: View {
             PreviewImageCache.shared.clearCacheForFile(at: url)
         }
 
-        if let deletedDetailIndex {
-            let nextIndex = min(deletedDetailIndex, imageFiles.count - 1)
+        updateFocusAfterRemovingFiles(
+            removedDetailIndex: deletedDetailIndex,
+            wasPreviewedRemoved: wasPreviewedDeleted,
+            previewIndex: previewIndex,
+            anchorIndexBeforeRemoval: anchorIndexBeforeDeletion
+        )
+    }
+
+    private func updateFocusAfterRemovingFiles(
+        removedDetailIndex: Int?,
+        wasPreviewedRemoved: Bool,
+        previewIndex: Int?,
+        anchorIndexBeforeRemoval: Int?
+    ) {
+        if let removedDetailIndex {
+            let nextIndex = min(removedDetailIndex, imageFiles.count - 1)
             if imageFiles.indices.contains(nextIndex) {
                 let nextFile = imageFiles[nextIndex]
                 detailViewFile = nextFile
@@ -625,7 +770,7 @@ struct ContentView: View {
             return
         }
 
-        if wasPreviewedDeleted {
+        if wasPreviewedRemoved {
             let remaining = imageFiles
             if let idx = previewIndex {
                 let nextIdx = idx < remaining.count ? idx : (remaining.count - 1)
@@ -642,27 +787,28 @@ struct ContentView: View {
                 isQuickPreviewPresented = false
                 focusedImageFileID = nil
             }
-        } else {
-            let remaining = imageFiles
-            if let idx = anchorIndexBeforeDeletion {
-                let candidate = idx < remaining.count ? idx : (remaining.count - 1)
-                if candidate >= 0, remaining.indices.contains(candidate) {
-                    let nextFile = remaining[candidate]
-                    selectedImageFileIDs = [nextFile.id]
-                    focusedImageFileID = nextFile.id
-                    scrollToID = nextFile.id
-                } else {
-                    selectedImageFileIDs = []
-                    focusedImageFileID = nil
-                }
-            } else if let first = remaining.first {
-                selectedImageFileIDs = [first.id]
-                focusedImageFileID = first.id
-                scrollToID = first.id
+            return
+        }
+
+        let remaining = imageFiles
+        if let idx = anchorIndexBeforeRemoval {
+            let candidate = idx < remaining.count ? idx : (remaining.count - 1)
+            if candidate >= 0, remaining.indices.contains(candidate) {
+                let nextFile = remaining[candidate]
+                selectedImageFileIDs = [nextFile.id]
+                focusedImageFileID = nextFile.id
+                scrollToID = nextFile.id
             } else {
                 selectedImageFileIDs = []
                 focusedImageFileID = nil
             }
+        } else if let first = remaining.first {
+            selectedImageFileIDs = [first.id]
+            focusedImageFileID = first.id
+            scrollToID = first.id
+        } else {
+            selectedImageFileIDs = []
+            focusedImageFileID = nil
         }
     }
 
