@@ -356,6 +356,90 @@ final class MicroficheTests: XCTestCase {
         XCTAssertEqual(reloadedStorage.getImages(for: sheet.id).count, 1)
     }
 
+    func testRepeatedAndBatchDropsDoNotDuplicateContactSheetImages() throws {
+        let fileManager = FileManager.default
+        let testDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-contact-sheet-batch-\(UUID().uuidString)")
+        let firstURL = testDirectory.appendingPathComponent("first.png")
+        let secondURL = testDirectory.appendingPathComponent("second.png")
+        let pngData = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )!
+
+        try fileManager.createDirectory(at: testDirectory, withIntermediateDirectories: true)
+        try pngData.write(to: firstURL)
+        try pngData.write(to: secondURL)
+        defer { try? fileManager.removeItem(at: testDirectory) }
+
+        let storage = ContactSheetStorage(baseDirectory: testDirectory, fileManager: fileManager)
+        let sheet = storage.createContactSheet(name: "Batch Drop")
+
+        XCTAssertEqual(storage.addImages(from: [firstURL, secondURL, firstURL], to: sheet.id).count, 2)
+        XCTAssertEqual(storage.addImages(from: [firstURL, secondURL], to: sheet.id).count, 2)
+        XCTAssertEqual(storage.contactSheets.first?.imageIDs.count, 2)
+        XCTAssertEqual(storage.getImages(for: sheet.id).count, 2)
+
+        let reloadedStorage = ContactSheetStorage(baseDirectory: testDirectory, fileManager: fileManager)
+        XCTAssertEqual(reloadedStorage.contactSheets.first?.imageIDs.count, 2)
+        XCTAssertEqual(reloadedStorage.getImages(for: sheet.id).count, 2)
+    }
+
+    func testDraggingStoredContactSheetImageToAnotherSheetReusesItsRecord() throws {
+        let fileManager = FileManager.default
+        let testDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-contact-sheet-reuse-\(UUID().uuidString)")
+        let sourceURL = testDirectory.appendingPathComponent("source.png")
+        let pngData = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )!
+
+        try fileManager.createDirectory(at: testDirectory, withIntermediateDirectories: true)
+        try pngData.write(to: sourceURL)
+        defer { try? fileManager.removeItem(at: testDirectory) }
+
+        let storage = ContactSheetStorage(baseDirectory: testDirectory, fileManager: fileManager)
+        let firstSheet = storage.createContactSheet(name: "First")
+        let secondSheet = storage.createContactSheet(name: "Second")
+        let firstID = try XCTUnwrap(storage.addImage(from: sourceURL, to: firstSheet.id))
+        let storedURL = try XCTUnwrap(storage.getImage(byID: firstID)?.storedURL)
+        let secondID = try XCTUnwrap(storage.addImage(from: storedURL, to: secondSheet.id))
+
+        XCTAssertEqual(secondID, firstID)
+        XCTAssertEqual(storage.getImages(for: firstSheet.id).count, 1)
+        XCTAssertEqual(storage.getImages(for: secondSheet.id).count, 1)
+    }
+
+    func testImageDropPayloadLoadsMultipleFileURLsOnceInProviderOrder() throws {
+        let firstURL = URL(fileURLWithPath: "/tmp/microfiche-first.png")
+        let secondURL = URL(fileURLWithPath: "/tmp/microfiche-second.png")
+        let expectation = expectation(description: "drop payload loads")
+
+        ImageDropSupport.loadFileURLs(
+            from: [
+                ImageDropSupport.itemProvider(for: firstURL),
+                ImageDropSupport.itemProvider(for: secondURL),
+                ImageDropSupport.itemProvider(for: firstURL)
+            ]
+        ) { urls in
+            XCTAssertEqual(urls, [firstURL, secondURL])
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 3)
+    }
+
+    func testImageDropPayloadRejectsUnsupportedProvider() {
+        let provider = NSItemProvider(object: "not a file URL" as NSString)
+        XCTAssertFalse(ImageDropSupport.canLoadFileURL(from: [provider]))
+
+        let expectation = expectation(description: "unsupported payload completes empty")
+        ImageDropSupport.loadFileURLs(from: [provider]) { urls in
+            XCTAssertTrue(urls.isEmpty)
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 3)
+    }
+
     func testImageFileIdentityIsStableAcrossRescans() {
         let url = URL(fileURLWithPath: "/Users/example/Pictures/sunset.jpg")
         let first = ImageFile(url: url)

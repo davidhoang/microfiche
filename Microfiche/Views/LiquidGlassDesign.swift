@@ -156,6 +156,21 @@ private struct SidebarSurface: View {
     }
 }
 
+private struct InspectorReadingSurface: View {
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            // Keep a trace of the system glass tint without allowing extended
+            // image colors to compete with metadata text and controls.
+            Color(NSColor.windowBackgroundColor)
+                .opacity(0.88)
+                .ignoresSafeArea()
+        } else {
+            Color(NSColor.controlBackgroundColor)
+                .ignoresSafeArea()
+        }
+    }
+}
+
 extension View {
     /// Preserve the legacy sidebar surface without painting over Tahoe's
     /// system-managed Liquid Glass navigation layer.
@@ -168,6 +183,14 @@ extension View {
                 SidebarSurface()
                     .ignoresSafeArea()
             }
+        }
+    }
+
+    /// Neutral reading surface inside the system inspector. The inspector's
+    /// native border and toolbar remain Liquid Glass while metadata stays clear.
+    func microficheInspectorContentChrome() -> some View {
+        self.background {
+            InspectorReadingSurface()
         }
     }
 

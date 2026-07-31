@@ -194,6 +194,7 @@ struct ImageMetadataInspectorView: View {
         .onDisappear {
             saveMetadata()
         }
+        .microficheInspectorContentChrome()
     }
 
     private var headerSection: some View {

@@ -364,7 +364,9 @@ struct ContentView: View {
                 scrollToID: $scrollToID,
                 onRename: renameFile,
                 contactSheets: contactSheetStorage.contactSheets,
+                activeContactSheet: activeContactSheet,
                 onAddToContactSheet: handleAddToContactSheet,
+                onDropToContactSheet: handleDropToContactSheet,
                 onArchive: handleArchiveRequest(for:)
             )
             .inspector(isPresented: libraryInspectorBinding) {
@@ -372,7 +374,6 @@ struct ContentView: View {
                     ImageMetadataInspectorView(file: focusedImageFile)
                         .id(focusedImageFile.id)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .microficheSidebarChrome()
                         .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
                 }
             }
@@ -433,6 +434,11 @@ struct ContentView: View {
     private var focusedImageFile: ImageFile? {
         guard let focusedImageFileID else { return nil }
         return imageFiles.first { $0.id == focusedImageFileID }
+    }
+
+    private var activeContactSheet: ContactSheet? {
+        guard case .contactSheet(let id) = selection else { return nil }
+        return contactSheetStorage.contactSheets.first { $0.id == id }
     }
 
     private var detailImageID: UUID? {
@@ -593,10 +599,10 @@ struct ContentView: View {
     // MARK: - Contact Sheets
 
     private func handleDropToContactSheet(sheetID: UUID, urls: [URL]) {
-        for url in urls {
-            guard supportedExtensions.contains(url.pathExtension.lowercased()) else { continue }
-            _ = contactSheetStorage.addImage(from: url, to: sheetID)
+        let supportedURLs = urls.filter {
+            supportedExtensions.contains($0.pathExtension.lowercased())
         }
+        _ = contactSheetStorage.addImages(from: supportedURLs, to: sheetID)
 
         if selection == .contactSheet(sheetID) {
             imageFiles = contactSheetStorage.getImages(for: sheetID)

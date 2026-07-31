@@ -7,7 +7,6 @@
 
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 enum ImageCellInteractionAction: Equatable {
     case select
@@ -112,8 +111,12 @@ struct MainContentView: View {
     @Binding var scrollToID: UUID?
     let onRename: (URL, String) -> Void
     let contactSheets: [ContactSheet]
+    let activeContactSheet: ContactSheet?
     let onAddToContactSheet: (UUID, URL) -> Void
+    let onDropToContactSheet: (UUID, [URL]) -> Void
     let onArchive: (ImageFile) -> Void
+    @State private var isContactSheetDropTargeted = false
+
     var body: some View {
         ZStack {
             mainCanvasBackground
@@ -126,7 +129,10 @@ struct MainContentView: View {
                 VStack {
                     if imageFiles.isEmpty {
                         Spacer(minLength: 24)
-                        EmptyLibraryStateView(unavailableLocation: unavailableLocation)
+                        EmptyLibraryStateView(
+                            unavailableLocation: unavailableLocation,
+                            activeContactSheet: activeContactSheet
+                        )
                         Spacer(minLength: 24)
                     } else {
                         if viewMode == .grid {
@@ -163,6 +169,18 @@ struct MainContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay {
+            if let activeContactSheet, isContactSheetDropTargeted {
+                ContactSheetDropOverlay(contactSheetName: activeContactSheet.name)
+                    .padding(18)
+                    .transition(.opacity)
+            }
+        }
+        .onDrop(
+            of: ImageDropSupport.acceptedContentTypes,
+            isTargeted: $isContactSheetDropTargeted,
+            perform: handleContactSheetDrop
+        )
         .overlay(alignment: .bottom) {
             if showsToolbar {
                 FloatingViewModeControl(selection: $viewMode)
@@ -170,6 +188,17 @@ struct MainContentView: View {
                     .transition(.opacity)
             }
         }
+    }
+
+    private func handleContactSheetDrop(providers: [NSItemProvider]) -> Bool {
+        guard let activeContactSheet,
+              ImageDropSupport.canLoadFileURL(from: providers) else { return false }
+
+        ImageDropSupport.loadFileURLs(from: providers) { urls in
+            guard !urls.isEmpty else { return }
+            onDropToContactSheet(activeContactSheet.id, urls)
+        }
+        return true
     }
 
     private var mainCanvasBackground: some View {
@@ -239,17 +268,18 @@ private extension View {
 
 private struct EmptyLibraryStateView: View {
     let unavailableLocation: LinkedLibraryFolder?
+    let activeContactSheet: ContactSheet?
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: unavailableLocation == nil ? "photo.on.rectangle.angled" : "externaldrive.badge.xmark")
+            Image(systemName: emptyStateIcon)
                 .font(.system(size: 36, weight: .medium))
                 .foregroundStyle(.secondary)
                 .symbolRenderingMode(.hierarchical)
                 .frame(width: 56, height: 56)
 
             VStack(spacing: 6) {
-                Text(unavailableLocation == nil ? "No images yet" : "Reconnect the drive")
+                Text(emptyStateTitle)
                     .font(.system(size: 22, weight: .semibold))
 
                 Text(emptyStateMessage)
@@ -263,12 +293,47 @@ private struct EmptyLibraryStateView: View {
     }
 
     private var emptyStateMessage: String {
+        if let activeContactSheet {
+            return "Drag image files into \(activeContactSheet.name) or drop them on its sidebar item."
+        }
         guard let unavailableLocation else {
             return "Link a folder or drop images into a contact sheet to start building a library."
         }
 
         let driveName = unavailableLocation.volumeName ?? unavailableLocation.name
         return "Reconnect \(driveName) to restore \(unavailableLocation.name) automatically."
+    }
+
+    private var emptyStateTitle: String {
+        if activeContactSheet != nil { return "Drop images here" }
+        return unavailableLocation == nil ? "No images yet" : "Reconnect the drive"
+    }
+
+    private var emptyStateIcon: String {
+        if activeContactSheet != nil { return "photo.badge.plus" }
+        return unavailableLocation == nil ? "photo.on.rectangle.angled" : "externaldrive.badge.xmark"
+    }
+}
+
+private struct ContactSheetDropOverlay: View {
+    let contactSheetName: String
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color.accentColor.opacity(0.08))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.85), style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
+            }
+            .overlay {
+                Label("Add to \(contactSheetName)", systemImage: "photo.badge.plus")
+                    .font(.system(size: 15, weight: .semibold))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.regularMaterial, in: Capsule())
+            }
+            .allowsHitTesting(false)
+            .accessibilityIdentifier("contact-sheet-drop-target")
     }
 }
 
@@ -445,7 +510,7 @@ struct GridCell: View {
             )
         }
         .onDrag {
-            imageFileProvider(for: file.url)
+            ImageDropSupport.itemProvider(for: file.url)
         }
         .imageLibraryContextMenu(
             file: file,
@@ -559,7 +624,7 @@ struct ImageListRow: View {
         .sidebarHoverBackground(isHovered: isHovered, isSelected: isSelected, cornerRadius: 7)
         .onHover { isHovered = $0 }
         .onDrag {
-            imageFileProvider(for: file.url)
+            ImageDropSupport.itemProvider(for: file.url)
         }
         .imageLibraryContextMenu(
             file: file,
@@ -600,13 +665,6 @@ private extension View {
             }
         }
     }
-}
-
-private func imageFileProvider(for url: URL) -> NSItemProvider {
-    NSItemProvider(
-        item: url as NSURL,
-        typeIdentifier: UTType.fileURL.identifier
-    )
 }
 
 // MARK: - Editable File Name

@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
 
 // MARK: - Sidebar
 
@@ -475,10 +474,12 @@ struct ContactSheetSidebarItem: View {
                 onSelect()
             }
         }
-        .onDrop(of: [UTType.fileURL, UTType.url, UTType.image], isTargeted: $isDropTargeted) { providers in
-            handleDrop(providers: providers)
-            return true
-        }
+        .onDrop(
+            of: ImageDropSupport.acceptedContentTypes,
+            isTargeted: $isDropTargeted,
+            perform: handleDrop
+        )
+        .accessibilityIdentifier("contact-sheet-\(contactSheet.id.uuidString)-drop-target")
         .contextMenu {
             Button("Rename") {
                 beginRenaming()
@@ -508,40 +509,12 @@ struct ContactSheetSidebarItem: View {
         }
     }
 
-    private func handleDrop(providers: [NSItemProvider]) {
-        for provider in providers {
-            let typeIdentifiers = [
-                UTType.fileURL.identifier,
-                UTType.url.identifier,
-                "public.file-url"
-            ]
-
-            for typeIdentifier in typeIdentifiers {
-                if provider.hasItemConformingToTypeIdentifier(typeIdentifier) {
-                    provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { (urlData, error) in
-                        DispatchQueue.main.async {
-                            guard error == nil else { return }
-
-                            var fileURL: URL?
-
-                            if let url = urlData as? URL {
-                                fileURL = url
-                            } else if let url = urlData as? NSURL {
-                                fileURL = url as URL
-                            } else if let data = urlData as? Data {
-                                fileURL = URL(dataRepresentation: data, relativeTo: nil)
-                            } else if let path = urlData as? String {
-                                fileURL = URL(fileURLWithPath: path)
-                            }
-
-                            if let fileURL = fileURL, fileURL.isFileURL {
-                                self.onDrop([fileURL])
-                            }
-                        }
-                    }
-                    break
-                }
-            }
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        guard ImageDropSupport.canLoadFileURL(from: providers) else { return false }
+        ImageDropSupport.loadFileURLs(from: providers) { urls in
+            guard !urls.isEmpty else { return }
+            onDrop(urls)
         }
+        return true
     }
 }

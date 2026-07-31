@@ -71,23 +71,48 @@ class ContactSheetStorage: ObservableObject {
     // MARK: - Image Operations
 
     func addImage(from sourceURL: URL, to contactSheetID: UUID) -> UUID? {
+        addImages(from: [sourceURL], to: contactSheetID).first
+    }
+
+    /// Adds a complete drag in one transaction. Existing source or stored URLs
+    /// reuse their image record so repeated drops do not create duplicate files.
+    func addImages(from sourceURLs: [URL], to contactSheetID: UUID) -> [UUID] {
         guard let index = contactSheets.firstIndex(where: { $0.id == contactSheetID }) else {
-            return nil
+            return []
         }
 
-        // Copy image to permanent storage
-        guard let contactSheetImage = copyImageToPermanentStorage(from: sourceURL) else {
-            return nil
+        var importedIDs: [UUID] = []
+        var seenPaths = Set<String>()
+        var didChange = false
+        var updatedContactSheet = contactSheets[index]
+
+        for sourceURL in sourceURLs.map(\.standardizedFileURL) {
+            guard seenPaths.insert(sourceURL.path).inserted else { continue }
+
+            if let existingID = existingImageID(for: sourceURL) {
+                if !updatedContactSheet.imageIDs.contains(existingID) {
+                    updatedContactSheet.addImage(existingID)
+                    didChange = true
+                }
+                importedIDs.append(existingID)
+                continue
+            }
+
+            guard let contactSheetImage = copyImageToPermanentStorage(from: sourceURL) else {
+                continue
+            }
+
+            updatedContactSheet.addImage(contactSheetImage.id)
+            imageMap[contactSheetImage.id] = contactSheetImage
+            importedIDs.append(contactSheetImage.id)
+            didChange = true
         }
 
-        // Add to contact sheet
-        contactSheets[index].addImage(contactSheetImage.id)
-
-        // Update image map
-        imageMap[contactSheetImage.id] = contactSheetImage
-
-        save()
-        return contactSheetImage.id
+        if didChange {
+            contactSheets[index] = updatedContactSheet
+            save()
+        }
+        return importedIDs
     }
 
     func removeImage(imageID: UUID, from contactSheetID: UUID) {
@@ -118,6 +143,14 @@ class ContactSheetStorage: ObservableObject {
     }
 
     // MARK: - Private Helpers
+
+    private func existingImageID(for sourceURL: URL) -> UUID? {
+        let source = sourceURL.standardizedFileURL
+        return imageMap.first { _, image in
+            image.originalURL.standardizedFileURL == source
+                || image.storedURL.standardizedFileURL == source
+        }?.key
+    }
 
     private func copyImageToPermanentStorage(from sourceURL: URL) -> ContactSheetImage? {
         let imageID = UUID()
