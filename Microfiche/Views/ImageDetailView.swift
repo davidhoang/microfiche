@@ -18,64 +18,59 @@ struct ImageDetailView: View {
     @State private var detailImage: NSImage?
     @State private var isLoadingImage = true
     @State private var imageRequestURL: URL?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 0) {
-            imageCanvas
-
-            if isMetadataPresented {
-                Divider()
-
+        extendedImageCanvas
+            .inspector(isPresented: $isMetadataPresented) {
                 ImageMetadataInspectorView(file: file)
                     .id(file.id)
-                    .frame(width: 320)
-                    .frame(maxHeight: .infinity)
-                    .microficheSidebarChrome()
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
             }
-        }
-        .animation(
-            MicroficheMotion.panel(reducedMotion: reduceMotion),
-            value: isMetadataPresented
-        )
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(file.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-            }
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(file.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                }
 
-            ToolbarItemGroup {
-                Button {
-                    withAnimation(MicroficheMotion.panel(reducedMotion: reduceMotion)) {
+                ToolbarItemGroup {
+                    Button {
                         isMetadataPresented.toggle()
+                    } label: {
+                        Image(systemName: "sidebar.right")
                     }
-                } label: {
-                    Image(systemName: "sidebar.right")
-                }
-                .help(isMetadataPresented ? "Hide Info" : "Show Info")
+                    .help(isMetadataPresented ? "Hide Info" : "Show Info")
 
-                ShareLink(item: file.url) {
-                    Image(systemName: "square.and.arrow.up")
-                }
+                    ShareLink(item: file.url) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
 
-                Menu {
-                    Button("Reveal in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([file.url])
+                    Menu {
+                        Button("Reveal in Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([file.url])
+                        }
+                        Button("Copy Path") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(file.url.path, forType: .string)
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
                     }
-                    Button("Copy Path") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(file.url.path, forType: .string)
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
+                    .help("More")
                 }
-                .help("More")
             }
-        }
-        .task(id: file.id) {
-            loadDetailImage()
+            .task(id: file.id) {
+                loadDetailImage()
+            }
+    }
+
+    @ViewBuilder
+    private var extendedImageCanvas: some View {
+        if #available(macOS 26.0, *) {
+            imageCanvas.backgroundExtensionEffect()
+        } else {
+            imageCanvas
         }
     }
 

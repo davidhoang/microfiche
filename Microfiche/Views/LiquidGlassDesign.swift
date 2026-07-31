@@ -157,19 +157,31 @@ private struct SidebarSurface: View {
 }
 
 extension View {
-    /// A shared adaptive surface for both navigation and inspector sidebars.
+    /// Preserve the legacy sidebar surface without painting over Tahoe's
+    /// system-managed Liquid Glass navigation layer.
+    @ViewBuilder
     func microficheSidebarChrome() -> some View {
-        background {
-            SidebarSurface()
-                .ignoresSafeArea()
+        if #available(macOS 26.0, *) {
+            self
+        } else {
+            self.background {
+                SidebarSurface()
+                    .ignoresSafeArea()
+            }
         }
     }
 
-    /// Keeps the window toolbar as one continuous surface above every split-view column.
+    /// Use the native Liquid Glass toolbar on Tahoe and the established opaque
+    /// toolbar surface on earlier macOS releases.
+    @ViewBuilder
     func microficheToolbarChrome() -> some View {
-        self
-            .toolbarBackground(Color(NSColor.windowBackgroundColor), for: .windowToolbar)
-            .toolbarBackground(.visible, for: .windowToolbar)
+        if #available(macOS 26.0, *) {
+            self
+        } else {
+            self
+                .toolbarBackground(Color(NSColor.windowBackgroundColor), for: .windowToolbar)
+                .toolbarBackground(.visible, for: .windowToolbar)
+        }
     }
 
     /// Detail column background — defers to system glass on Tahoe, keeps legacy card on older macOS.

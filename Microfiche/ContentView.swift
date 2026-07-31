@@ -367,17 +367,17 @@ struct ContentView: View {
                 onAddToContactSheet: handleAddToContactSheet,
                 onArchive: handleArchiveRequest(for:)
             )
+            .inspector(isPresented: libraryInspectorBinding) {
+                if let focusedImageFile {
+                    ImageMetadataInspectorView(file: focusedImageFile)
+                        .id(focusedImageFile.id)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .microficheSidebarChrome()
+                        .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
+                }
+            }
             .navigationDestination(for: LibraryRoute.self) { route in
                 imageDetailDestination(for: route)
-            }
-        }
-        .inspector(isPresented: libraryInspectorBinding) {
-            if let focusedImageFile {
-                ImageMetadataInspectorView(file: focusedImageFile)
-                    .id(focusedImageFile.id)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .microficheSidebarChrome()
-                    .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
             }
         }
     }
