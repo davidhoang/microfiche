@@ -15,6 +15,8 @@ enum MicroficheMotion {
     static let snap = Animation.easeOut(duration: 0.1)
     /// Slightly longer for view transitions that need a beat of continuity.
     static let transition = Animation.easeOut(duration: 0.14)
+    /// Fluid movement for structural panels that resize the content canvas.
+    static let panel = Animation.spring(response: 0.32, dampingFraction: 0.9)
 
     static func snap(reducedMotion: Bool) -> Animation? {
         reducedMotion ? nil : snap
@@ -22,6 +24,10 @@ enum MicroficheMotion {
 
     static func transition(reducedMotion: Bool) -> Animation? {
         reducedMotion ? nil : transition
+    }
+
+    static func panel(reducedMotion: Bool) -> Animation? {
+        reducedMotion ? nil : panel
     }
 }
 
@@ -143,37 +149,27 @@ struct LiquidGlassPanel<Content: View>: View {
 
 // MARK: - Navigation Chrome
 
-private struct SidebarMaterialBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let visualEffectView = NSVisualEffectView()
-        visualEffectView.material = .sidebar
-        visualEffectView.blendingMode = .behindWindow
-        visualEffectView.state = .active
-        return visualEffectView
+private struct SidebarSurface: View {
+    var body: some View {
+        Color(NSColor.windowBackgroundColor)
+            .overlay(Color.primary.opacity(0.035))
     }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 extension View {
-    /// Matches the system material used by a NavigationSplitView sidebar.
+    /// A shared adaptive surface for both navigation and inspector sidebars.
     func microficheSidebarChrome() -> some View {
         background {
-            SidebarMaterialBackground()
+            SidebarSurface()
                 .ignoresSafeArea()
         }
     }
 
-    /// Removes legacy toolbar backgrounds that interfere with the system scroll-edge glass effect.
-    @ViewBuilder
+    /// Keeps the window toolbar as one continuous surface above every split-view column.
     func microficheToolbarChrome() -> some View {
-        if #available(macOS 26.0, *) {
-            self
-        } else {
-            self
-                .toolbarBackground(Color(NSColor.textBackgroundColor), for: .windowToolbar)
-                .toolbarBackground(.visible, for: .windowToolbar)
-        }
+        self
+            .toolbarBackground(Color(NSColor.windowBackgroundColor), for: .windowToolbar)
+            .toolbarBackground(.visible, for: .windowToolbar)
     }
 
     /// Detail column background — defers to system glass on Tahoe, keeps legacy card on older macOS.

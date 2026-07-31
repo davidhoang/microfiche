@@ -36,6 +36,27 @@ enum ArrowDirection {
     case up, down, left, right
 }
 
+enum LibraryRoute: Hashable {
+    case image(UUID)
+
+    var imageID: UUID {
+        switch self {
+        case .image(let id):
+            return id
+        }
+    }
+}
+
+enum LibraryNavigation {
+    static func path(toImage id: UUID) -> [LibraryRoute] {
+        [.image(id)]
+    }
+
+    static func detailImageID(in path: [LibraryRoute]) -> UUID? {
+        path.last?.imageID
+    }
+}
+
 extension Notification.Name {
     static let microficheMoveSelectionToArchive = Notification.Name("microficheMoveSelectionToArchive")
 }
@@ -94,15 +115,17 @@ struct ContentView: View {
     @State private var isQuickPreviewPresented = false
     @State private var scrollToID: UUID?
     @State private var gridColumnCount: Int = 1
-    @State private var detailViewFile: ImageFile?
-    @State private var isMetadataInspectorPresented = true
-    @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
+    @State private var libraryPath: [LibraryRoute] = []
+    @AppStorage("libraryMetadataInspectorPresented") private var isMetadataInspectorPresented = false
+    @AppStorage("detailMetadataPresented") private var isDetailMetadataPresented = true
+    @AppStorage("librarySidebarCollapsed") private var isLibrarySidebarCollapsed = false
     @State private var externalDriveNotice: String?
     @AppStorage("lastSelectedLibraryFolderID") private var lastSelectedLibraryFolderID = ""
     @StateObject private var libraryStorage = LibraryStorage.shared
     @StateObject private var contactSheetStorage = ContactSheetStorage.shared
     @StateObject private var userPreferences = UserPreferences.shared
     @StateObject private var archiveFolderStore = ArchiveFolderStore.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let supportedExtensions = ["jpg", "jpeg", "png", "pdf", "svg", "gif", "tiff"]
 
@@ -112,136 +135,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            NavigationSplitView(columnVisibility: $splitViewVisibility) {
-                    SidebarView(
-                        folders: libraryStorage.linkedFolders,
-                        externalVolumes: libraryStorage.rememberedExternalVolumes,
-                        contactSheets: contactSheetStorage.contactSheets,
-                        selection: selection,
-                        onWidthChange: handleSidebarWidthChange,
-                        onLinkFolder: linkFolder,
-                        onSelect: { newSelection in
-                            selection = newSelection
-                        },
-                        onRemoveFolder: removeFolder,
-                        onForgetExternalVolume: libraryStorage.forgetExternalVolume,
-                        onCreateContactSheet: {
-                            let newSheet = contactSheetStorage.createContactSheet()
-                            selection = .contactSheet(newSheet.id)
-                        },
-                        onRenameContactSheet: { id, newName in
-                            contactSheetStorage.renameContactSheet(id: id, newName: newName)
-                        },
-                        onDeleteContactSheet: { id in
-                            contactSheetStorage.deleteContactSheet(id: id)
-                            if selection == .contactSheet(id) {
-                                selection = .all
-                            }
-                        },
-                        onDropToContactSheet: { sheetID, urls in
-                            handleDropToContactSheet(sheetID: sheetID, urls: urls)
-                        }
-                    )
-                    .navigationSplitViewColumnWidth(
-                        min: SidebarLayout.minimumWidth,
-                        ideal: SidebarLayout.idealWidth,
-                        max: SidebarLayout.maximumWidth
-                    )
-            } detail: {
-                ZStack {
-                    MainContentView(
-                        imageFiles: imageFiles,
-                        unavailableLocation: unavailableSelectedFolder,
-                        showsToolbar: detailViewFile == nil,
-                        viewMode: $viewMode,
-                        gridThumbnailSize: displayedGridThumbnailSize,
-                        isResizingGrid: isResizingGrid,
-                        gridColumnCount: $gridColumnCount,
-                        selectedImageFileIDs: $selectedImageFileIDs,
-                        onSelectImage: handleImageSelection,
-                        onDoubleClickImage: handleDoubleClickImage,
-                        scrollToID: $scrollToID,
-                        onRename: renameFile,
-                        contactSheets: contactSheetStorage.contactSheets,
-                        onAddToContactSheet: handleAddToContactSheet,
-                        onArchive: handleArchiveRequest(for:)
-                    )
-                    .opacity(detailViewFile == nil ? 1 : 0)
-                    .allowsHitTesting(detailViewFile == nil)
-                    .accessibilityHidden(detailViewFile != nil)
-
-                    if let detailFile = detailViewFile {
-                        ImageDetailView(
-                            file: detailFile,
-                            isInspectorPresented: $isMetadataInspectorPresented,
-                            onBack: closeImageDetail
-                        )
-                        .transition(.opacity)
-                    }
-                }
-                .animation(MicroficheMotion.transition, value: detailViewFile?.id)
-                .inspector(isPresented: $isMetadataInspectorPresented) {
-                    Group {
-                        if let focusedImageFile {
-                            ImageMetadataInspectorView(file: focusedImageFile)
-                                .id(focusedImageFile.id)
-                        } else {
-                            ContentUnavailableView(
-                                "No Image Selected",
-                                systemImage: "info.circle",
-                                description: Text("Select an image to view its metadata.")
-                            )
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .microficheSidebarChrome()
-                    .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
-                }
-            }
-                .navigationTitle("")
-                .toolbar {
-                    if detailViewFile == nil {
-                        ToolbarItem(placement: .principal) {
-                            if viewMode == .grid {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "photo")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
-
-                                    Slider(
-                                        value: gridThumbnailSizeBinding,
-                                        in: GridThumbnailSizing.minimum...GridThumbnailSizing.maximum,
-                                        onEditingChanged: handleGridResize
-                                    )
-                                    .frame(width: 110)
-                                    .accessibilityLabel("Thumbnail size")
-                                    .accessibilityValue("\(Int(displayedGridThumbnailSize.rounded())) points")
-
-                                    Image(systemName: "photo.fill")
-                                        .font(.system(size: 15))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .fixedSize()
-                                .help("Thumbnail Size")
-                            } else {
-                                Color.clear
-                                    .frame(width: 168, height: 1)
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                        .hideSharedBackgroundIfAvailable()
-
-                        ToolbarItem {
-                            Button {
-                                isMetadataInspectorPresented.toggle()
-                            } label: {
-                                Image(systemName: "sidebar.right")
-                            }
-                            .help(isMetadataInspectorPresented ? "Hide Info" : "Show Info")
-                        }
-                        .hideSharedBackgroundIfAvailable()
-                    }
-                }
+            libraryContainer
                 .onChange(of: selection) { _, newValue in
                     switch newValue {
                     case .all:
@@ -254,18 +148,22 @@ struct ContentView: View {
                     case .contactSheet(let id):
                         libraryLoadGeneration = UUID()
                         imageFiles = contactSheetStorage.getImages(for: id)
-                        let urls = imageFiles.map { $0.url }
-                        PreviewImageCache.shared.preloadLibrary(urls: urls, priority: .utility)
                     case .none:
                         imageFiles = []
                     }
                     selectedImageFileIDs = []
                     focusedImageFileID = nil
                     isQuickPreviewPresented = false
-                    detailViewFile = nil
+                    libraryPath.removeAll()
                 }
                 .onChange(of: libraryStorage.linkedFolders) {
                     reloadSelectedLibraryLocation()
+                }
+                .onChange(of: libraryPath) { oldPath, newPath in
+                    if LibraryNavigation.detailImageID(in: oldPath) != nil,
+                       LibraryNavigation.detailImageID(in: newPath) == nil {
+                        requestScrollToFocusedImage()
+                    }
                 }
                 .onChange(of: viewMode) {
                     requestScrollToFocusedImage()
@@ -302,7 +200,7 @@ struct ContentView: View {
                     onEscapePressed: {
                         if userPreferences.isPresentingOnboarding {
                             userPreferences.completeOnboarding()
-                        } else if detailViewFile != nil {
+                        } else if isImageDetailPresented {
                             closeImageDetail()
                         } else if isQuickPreviewPresented {
                             dismissQuickPreview()
@@ -401,9 +299,190 @@ struct ContentView: View {
         }
     }
 
+    private var libraryContainer: AnyView {
+        AnyView(
+            NavigationSplitView(columnVisibility: splitViewVisibilityBinding) {
+                SidebarView(
+                    folders: libraryStorage.linkedFolders,
+                    externalVolumes: libraryStorage.rememberedExternalVolumes,
+                    contactSheets: contactSheetStorage.contactSheets,
+                    selection: selection,
+                    onWidthChange: handleSidebarWidthChange,
+                    onLinkFolder: linkFolder,
+                    onSelect: { newSelection in
+                        selection = newSelection
+                    },
+                    onRemoveFolder: removeFolder,
+                    onForgetExternalVolume: libraryStorage.forgetExternalVolume,
+                    onCreateContactSheet: {
+                        let newSheet = contactSheetStorage.createContactSheet()
+                        selection = .contactSheet(newSheet.id)
+                    },
+                    onRenameContactSheet: { id, newName in
+                        contactSheetStorage.renameContactSheet(id: id, newName: newName)
+                    },
+                    onDeleteContactSheet: { id in
+                        contactSheetStorage.deleteContactSheet(id: id)
+                        if selection == .contactSheet(id) {
+                            selection = .all
+                        }
+                    },
+                    onDropToContactSheet: { sheetID, urls in
+                        handleDropToContactSheet(sheetID: sheetID, urls: urls)
+                    }
+                )
+                .navigationSplitViewColumnWidth(
+                    min: SidebarLayout.minimumWidth,
+                    ideal: SidebarLayout.idealWidth,
+                    max: SidebarLayout.maximumWidth
+                )
+                .microficheSidebarChrome()
+            } detail: {
+                libraryDetailNavigation
+            }
+            .navigationTitle("")
+            .toolbar {
+                libraryToolbar
+            }
+            .microficheToolbarChrome()
+        )
+    }
+
+    private var libraryDetailNavigation: some View {
+        NavigationStack(path: $libraryPath) {
+            MainContentView(
+                imageFiles: imageFiles,
+                unavailableLocation: unavailableSelectedFolder,
+                showsToolbar: true,
+                viewMode: $viewMode,
+                gridThumbnailSize: displayedGridThumbnailSize,
+                isResizingGrid: isResizingGrid,
+                gridColumnCount: $gridColumnCount,
+                selectedImageFileIDs: $selectedImageFileIDs,
+                onSelectImage: handleImageSelection,
+                onDoubleClickImage: handleDoubleClickImage,
+                scrollToID: $scrollToID,
+                onRename: renameFile,
+                contactSheets: contactSheetStorage.contactSheets,
+                onAddToContactSheet: handleAddToContactSheet,
+                onArchive: handleArchiveRequest(for:)
+            )
+            .navigationDestination(for: LibraryRoute.self) { route in
+                imageDetailDestination(for: route)
+            }
+        }
+        .inspector(isPresented: libraryInspectorBinding) {
+            if let focusedImageFile {
+                ImageMetadataInspectorView(file: focusedImageFile)
+                    .id(focusedImageFile.id)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .microficheSidebarChrome()
+                    .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var libraryToolbar: some ToolbarContent {
+        if !isImageDetailPresented {
+            ToolbarItem(placement: .principal) {
+                if viewMode == .grid {
+                    HStack(spacing: 6) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+
+                        Slider(
+                            value: gridThumbnailSizeBinding,
+                            in: GridThumbnailSizing.minimum...GridThumbnailSizing.maximum,
+                            onEditingChanged: handleGridResize
+                        )
+                        .frame(width: 110)
+                        .accessibilityLabel("Thumbnail size")
+                        .accessibilityValue("\(Int(displayedGridThumbnailSize.rounded())) points")
+
+                        Image(systemName: "photo.fill")
+                            .font(.system(size: 15))
+                            .foregroundStyle(.secondary)
+                    }
+                    .fixedSize()
+                    .help("Thumbnail Size")
+                } else {
+                    Color.clear
+                        .frame(width: 168, height: 1)
+                        .accessibilityHidden(true)
+                }
+            }
+            .hideSharedBackgroundIfAvailable()
+
+            ToolbarItem {
+                Button {
+                    withAnimation(MicroficheMotion.panel(reducedMotion: reduceMotion)) {
+                        isMetadataInspectorPresented.toggle()
+                    }
+                } label: {
+                    Image(systemName: "sidebar.right")
+                }
+                .disabled(focusedImageFile == nil)
+                .help(isMetadataInspectorPresented ? "Hide Info" : "Show Info")
+            }
+            .hideSharedBackgroundIfAvailable()
+        }
+    }
+
     private var focusedImageFile: ImageFile? {
         guard let focusedImageFileID else { return nil }
         return imageFiles.first { $0.id == focusedImageFileID }
+    }
+
+    private var detailImageID: UUID? {
+        LibraryNavigation.detailImageID(in: libraryPath)
+    }
+
+    private var detailImageFile: ImageFile? {
+        guard let detailImageID else { return nil }
+        return imageFiles.first { $0.id == detailImageID }
+    }
+
+    private var isImageDetailPresented: Bool {
+        detailImageID != nil
+    }
+
+    private var libraryInspectorBinding: Binding<Bool> {
+        Binding(
+            get: {
+                !isImageDetailPresented
+                    && focusedImageFile != nil
+                    && isMetadataInspectorPresented
+            },
+            set: { isPresented in
+                guard !isImageDetailPresented, focusedImageFile != nil else { return }
+                isMetadataInspectorPresented = isPresented
+            }
+        )
+    }
+
+    private var splitViewVisibilityBinding: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { isLibrarySidebarCollapsed ? .detailOnly : .all },
+            set: { isLibrarySidebarCollapsed = ($0 == .detailOnly) }
+        )
+    }
+
+    @ViewBuilder
+    private func imageDetailDestination(for route: LibraryRoute) -> some View {
+        if let file = imageFiles.first(where: { $0.id == route.imageID }) {
+            ImageDetailView(
+                file: file,
+                isMetadataPresented: $isDetailMetadataPresented
+            )
+        } else {
+            ContentUnavailableView(
+                "Image Unavailable",
+                systemImage: "photo.badge.exclamationmark",
+                description: Text("The image is no longer part of this library.")
+            )
+        }
     }
 
     private var unavailableSelectedFolder: LinkedLibraryFolder? {
@@ -502,11 +581,11 @@ struct ContentView: View {
     }
 
     private func handleSidebarWidthChange(_ width: CGFloat) {
-        guard splitViewVisibility != .detailOnly else { return }
+        guard !isLibrarySidebarCollapsed else { return }
 
         if width < SidebarLayout.autoCollapseWidth {
             withAnimation(MicroficheMotion.transition) {
-                splitViewVisibility = .detailOnly
+                isLibrarySidebarCollapsed = true
             }
         }
     }
@@ -559,8 +638,6 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 guard self.libraryLoadGeneration == generation else { return }
                 self.imageFiles = newImageFiles
-                let urls = newImageFiles.map { $0.url }
-                PreviewImageCache.shared.preloadLibrary(urls: urls, priority: .utility)
             }
         }
     }
@@ -600,19 +677,13 @@ struct ContentView: View {
             isQuickPreviewPresented = false
             selectedImageFileIDs = [fileID]
             focusedImageFileID = fileID
-            withAnimation(MicroficheMotion.transition) {
-                detailViewFile = file
-                // Keep the metadata inspector available for editing Finder labels/tags.
-                isMetadataInspectorPresented = true
-            }
+            libraryPath = LibraryNavigation.path(toImage: file.id)
         }
     }
 
     private func closeImageDetail() {
-        withAnimation(MicroficheMotion.transition) {
-            detailViewFile = nil
-        }
-        requestScrollToFocusedImage()
+        guard !libraryPath.isEmpty else { return }
+        libraryPath.removeLast()
     }
 
     // MARK: - Archive
@@ -646,7 +717,7 @@ struct ContentView: View {
         }
 
         let archivedIDs = Set(files.map(\.id))
-        let deletedDetailIndex = detailViewFile.flatMap { detailFile in
+        let deletedDetailIndex = detailImageFile.flatMap { detailFile in
             archivedIDs.contains(detailFile.id)
                 ? imageFiles.firstIndex(where: { $0.id == detailFile.id })
                 : nil
@@ -704,7 +775,7 @@ struct ContentView: View {
 
     private func moveFilesToTrash(_ files: [ImageFile]) {
         let deletedIDs = Set(files.map { $0.id })
-        let deletedDetailIndex = detailViewFile.flatMap { detailFile in
+        let deletedDetailIndex = detailImageFile.flatMap { detailFile in
             deletedIDs.contains(detailFile.id)
                 ? imageFiles.firstIndex(where: { $0.id == detailFile.id })
                 : nil
@@ -757,13 +828,12 @@ struct ContentView: View {
             let nextIndex = min(removedDetailIndex, imageFiles.count - 1)
             if imageFiles.indices.contains(nextIndex) {
                 let nextFile = imageFiles[nextIndex]
-                detailViewFile = nextFile
+                libraryPath = LibraryNavigation.path(toImage: nextFile.id)
                 selectedImageFileIDs = [nextFile.id]
                 focusedImageFileID = nextFile.id
                 scrollToID = nextFile.id
             } else {
-                detailViewFile = nil
-                isMetadataInspectorPresented = true
+                libraryPath.removeAll()
                 selectedImageFileIDs = []
                 focusedImageFileID = nil
             }
@@ -830,7 +900,7 @@ struct ContentView: View {
         guard let nextIndex = nextImageIndex(from: currentIndex, direction: direction) else { return }
 
         let nextFile = imageFiles[nextIndex]
-        if isQuickPreviewPresented || detailViewFile != nil {
+        if isQuickPreviewPresented || isImageDetailPresented {
             selectedImageFileIDs = [nextFile.id]
         } else if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
             selectedImageFileIDs.insert(nextFile.id)
@@ -838,8 +908,8 @@ struct ContentView: View {
             selectedImageFileIDs = [nextFile.id]
         }
         self.focusedImageFileID = nextFile.id
-        if detailViewFile != nil {
-            detailViewFile = nextFile
+        if isImageDetailPresented {
+            libraryPath = LibraryNavigation.path(toImage: nextFile.id)
         }
         scrollToID = nextFile.id
         PreviewImageCache.shared.preloadImage(for: nextFile.url)
@@ -856,7 +926,7 @@ struct ContentView: View {
     }
 
     private func toggleQuickPreview() {
-        guard detailViewFile == nil else { return }
+        guard !isImageDetailPresented else { return }
 
         if isQuickPreviewPresented {
             dismissQuickPreview()
@@ -907,8 +977,8 @@ struct ContentView: View {
                 if scrollToID == oldID {
                     scrollToID = renamedFile.id
                 }
-                if detailViewFile?.id == oldID {
-                    detailViewFile = renamedFile
+                if detailImageID == oldID {
+                    libraryPath = LibraryNavigation.path(toImage: renamedFile.id)
                 }
             }
         } catch {

@@ -18,13 +18,18 @@ struct NativeFileMetadata: Equatable, Sendable {
 enum NativeFileMetadataService {
     private static let finderCommentAttribute = "com.apple.metadata:kMDItemFinderComment"
     private static let finderInfoAttribute = "com.apple.FinderInfo"
+    private static let finderTagsAttribute = "com.apple.metadata:_kMDItemUserTags"
 
     static func load(from url: URL) -> NativeFileMetadata {
         var label = FinderLabel.none
         var tagNames: [String] = []
 
         if let values = try? url.resourceValues(forKeys: [.labelNumberKey, .tagNamesKey]) {
-            label = FinderLabel(labelNumber: values.labelNumber)
+            if let labelNumber = values.labelNumber {
+                label = FinderLabel(labelNumber: labelNumber)
+            } else if let finderLabel = readLabelFromFinderInfo(at: url) {
+                label = finderLabel
+            }
             tagNames = Self.normalizeList(values.tagNames ?? [])
         } else if let finderLabel = readLabelFromFinderInfo(at: url) {
             label = finderLabel
@@ -41,21 +46,27 @@ enum NativeFileMetadataService {
     }
 
     static func setLabel(_ label: FinderLabel, for url: URL) throws {
-        var mutableURL = url
-        var values = URLResourceValues()
-        values.labelNumber = label.rawValue
-        do {
-            try mutableURL.setResourceValues(values)
-        } catch {
-            try writeLabelToFinderInfo(label, at: url)
-        }
+        try writeLabelToFinderInfo(label, at: url)
     }
 
     static func setTagNames(_ tagNames: [String], for url: URL) throws {
-        var mutableURL = url
-        var values = URLResourceValues()
-        values.tagNames = normalizeList(tagNames)
-        try mutableURL.setResourceValues(values)
+        let normalizedTagNames = normalizeList(tagNames)
+
+        if #available(macOS 26.0, *) {
+            var mutableURL = url
+            var values = URLResourceValues()
+            values.tagNames = normalizedTagNames
+            try mutableURL.setResourceValues(values)
+        } else if normalizedTagNames.isEmpty {
+            try? url.removeExtendedAttribute(forName: finderTagsAttribute)
+        } else {
+            let data = try PropertyListSerialization.data(
+                fromPropertyList: normalizedTagNames,
+                format: .binary,
+                options: 0
+            )
+            try url.setExtendedAttribute(data, forName: finderTagsAttribute)
+        }
     }
 
     static func setComment(_ comment: String, for url: URL) throws {

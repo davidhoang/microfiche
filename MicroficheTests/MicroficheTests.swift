@@ -195,6 +195,43 @@ final class MicroficheTests: XCTestCase {
         )
     }
 
+    func testLibraryNavigationRoutesFirstAndSubsequentDetailSelections() {
+        let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let secondID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+
+        var path = LibraryNavigation.path(toImage: firstID)
+        XCTAssertEqual(path, [.image(firstID)])
+        XCTAssertEqual(LibraryNavigation.detailImageID(in: path), firstID)
+
+        path.removeLast()
+        XCTAssertNil(LibraryNavigation.detailImageID(in: path))
+
+        path = LibraryNavigation.path(toImage: secondID)
+        XCTAssertEqual(path, [.image(secondID)])
+        XCTAssertEqual(LibraryNavigation.detailImageID(in: path), secondID)
+
+        path.removeLast()
+        XCTAssertNil(LibraryNavigation.detailImageID(in: path))
+
+        path = LibraryNavigation.path(toImage: firstID)
+        XCTAssertEqual(LibraryNavigation.detailImageID(in: path), firstID)
+    }
+
+    func testImageCellClickCountsProduceConsistentSelectionAndDetailActions() {
+        XCTAssertEqual(ImageCellInteraction.actions(forClickCount: 0), [])
+        XCTAssertEqual(ImageCellInteraction.actions(forClickCount: 1), [.select])
+        XCTAssertEqual(
+            ImageCellInteraction.actions(forClickCount: 2),
+            [.select, .openDetail]
+        )
+        XCTAssertEqual(ImageCellInteraction.actions(forClickCount: 3), [.select])
+
+        let repeatedDoubleClickActions = [1, 2, 1, 2]
+            .flatMap { ImageCellInteraction.actions(forClickCount: $0) }
+        XCTAssertEqual(repeatedDoubleClickActions.filter { $0 == .openDetail }.count, 2)
+        XCTAssertEqual(repeatedDoubleClickActions.filter { $0 == .select }.count, 4)
+    }
+
     @MainActor
     func testLibraryStorageRestoresLinkedFolderFromBookmark() throws {
         let root = FileManager.default.temporaryDirectory

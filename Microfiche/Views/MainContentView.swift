@@ -5,8 +5,96 @@
 //  Created by David Hoang on 6/8/25.
 //
 
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
+
+enum ImageCellInteractionAction: Equatable {
+    case select
+    case openDetail
+}
+
+enum ImageCellInteraction {
+    static func actions(forClickCount clickCount: Int) -> [ImageCellInteractionAction] {
+        guard clickCount > 0 else { return [] }
+        return clickCount == 2 ? [.select, .openDetail] : [.select]
+    }
+}
+
+private final class NonHitTestingClickMonitorView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}
+
+private struct ImageCellClickMonitor: NSViewRepresentable {
+    let onSelect: () -> Void
+    let onDoubleClick: () -> Void
+
+    final class Coordinator {
+        weak var view: NSView?
+        var monitor: Any?
+        var onSelect: () -> Void
+        var onDoubleClick: () -> Void
+
+        init(onSelect: @escaping () -> Void, onDoubleClick: @escaping () -> Void) {
+            self.onSelect = onSelect
+            self.onDoubleClick = onDoubleClick
+        }
+
+        func installMonitor(for view: NSView) {
+            self.view = view
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                guard let self,
+                      let view = self.view,
+                      event.window === view.window else { return event }
+
+                let location = view.convert(event.locationInWindow, from: nil)
+                guard view.bounds.contains(location) else { return event }
+
+                for action in ImageCellInteraction.actions(forClickCount: event.clickCount) {
+                    switch action {
+                    case .select:
+                        self.onSelect()
+                    case .openDetail:
+                        self.onDoubleClick()
+                    }
+                }
+                return event
+            }
+        }
+
+        func removeMonitor() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        deinit {
+            removeMonitor()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onSelect: onSelect, onDoubleClick: onDoubleClick)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NonHitTestingClickMonitorView()
+        context.coordinator.installMonitor(for: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onSelect = onSelect
+        context.coordinator.onDoubleClick = onDoubleClick
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.removeMonitor()
+    }
+}
 
 // MARK: - Main Content
 
@@ -350,8 +438,12 @@ struct GridCell: View {
             }
             isHovered = hovering
         }
-        .onTapGesture(count: 2) { onDoubleClickImage(file.id) }
-        .onTapGesture { onSelectImage(file.id) }
+        .overlay {
+            ImageCellClickMonitor(
+                onSelect: { onSelectImage(file.id) },
+                onDoubleClick: { onDoubleClickImage(file.id) }
+            )
+        }
         .onDrag {
             imageFileProvider(for: file.url)
         }
@@ -475,14 +567,12 @@ struct ImageListRow: View {
             onAddToContactSheet: onAddToContactSheet,
             onArchive: onArchive
         )
-        .simultaneousGesture(
-            TapGesture(count: 1)
-                .onEnded { _ in onSelectImage(file.id) }
-        )
-        .simultaneousGesture(
-            TapGesture(count: 2)
-                .onEnded { _ in onDoubleClickImage(file.id) }
-        )
+        .overlay {
+            ImageCellClickMonitor(
+                onSelect: { onSelectImage(file.id) },
+                onDoubleClick: { onDoubleClickImage(file.id) }
+            )
+        }
     }
 }
 

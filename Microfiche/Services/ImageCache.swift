@@ -57,6 +57,25 @@ final class ImageCache {
             return
         }
 
+        Task {
+            try? await ICloudItemDownloadCoordinator.shared.prepareForReading(url)
+            enqueueImageLoad(for: url, size: size, key: key, completion: completion)
+        }
+    }
+
+    private func enqueueImageLoad(
+        for url: URL,
+        size: CGFloat,
+        key: String,
+        completion: @escaping Completion
+    ) {
+        if let cachedImage = cache.object(forKey: key as NSString) {
+            DispatchQueue.main.async {
+                completion(cachedImage)
+            }
+            return
+        }
+
         stateQueue.async {
             if self.inFlight[key] != nil {
                 self.inFlight[key]?.append(completion)

@@ -13,44 +13,33 @@ import SwiftUI
 
 struct ImageDetailView: View {
     let file: ImageFile
-    @Binding var isInspectorPresented: Bool
-    let onBack: () -> Void
+    @Binding var isMetadataPresented: Bool
 
     @State private var detailImage: NSImage?
     @State private var isLoadingImage = true
     @State private var imageRequestURL: URL?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ZStack {
-            Color(NSColor.textBackgroundColor)
-                .ignoresSafeArea()
+        HStack(spacing: 0) {
+            imageCanvas
 
-            Group {
-                if file.url.pathExtension.lowercased() == "pdf" {
-                    PDFKitView(url: file.url)
-                } else if file.url.pathExtension.lowercased() == "svg" {
-                    SVGImageView(url: file.url)
-                        .aspectRatio(contentMode: .fit)
-                } else if let image = detailImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                } else if isLoadingImage {
-                    ProgressView()
-                }
+            if isMetadataPresented {
+                Divider()
+
+                ImageMetadataInspectorView(file: file)
+                    .id(file.id)
+                    .frame(width: 320)
+                    .frame(maxHeight: .infinity)
+                    .microficheSidebarChrome()
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(28)
         }
+        .animation(
+            MicroficheMotion.panel(reducedMotion: reduceMotion),
+            value: isMetadataPresented
+        )
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.backward")
-                }
-                .help("Back to Library")
-            }
-
             ToolbarItem(placement: .principal) {
                 Text(file.name)
                     .font(.system(size: 13, weight: .medium))
@@ -59,11 +48,13 @@ struct ImageDetailView: View {
 
             ToolbarItemGroup {
                 Button {
-                    isInspectorPresented.toggle()
+                    withAnimation(MicroficheMotion.panel(reducedMotion: reduceMotion)) {
+                        isMetadataPresented.toggle()
+                    }
                 } label: {
                     Image(systemName: "sidebar.right")
                 }
-                .help(isInspectorPresented ? "Hide Info" : "Show Info")
+                .help(isMetadataPresented ? "Hide Info" : "Show Info")
 
                 ShareLink(item: file.url) {
                     Image(systemName: "square.and.arrow.up")
@@ -85,6 +76,31 @@ struct ImageDetailView: View {
         }
         .task(id: file.id) {
             loadDetailImage()
+        }
+    }
+
+    private var imageCanvas: some View {
+        ZStack {
+            Color(NSColor.textBackgroundColor)
+                .ignoresSafeArea()
+
+            Group {
+                if file.url.pathExtension.lowercased() == "pdf" {
+                    PDFKitView(url: file.url)
+                } else if file.url.pathExtension.lowercased() == "svg" {
+                    SVGImageView(url: file.url)
+                        .aspectRatio(contentMode: .fit)
+                } else if let image = detailImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                } else if isLoadingImage {
+                    ProgressView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(28)
         }
     }
 

@@ -50,6 +50,26 @@ final class PreviewImageCache {
             return
         }
 
+        Task {
+            try? await ICloudItemDownloadCoordinator.shared.prepareForReading(url)
+            enqueueImageLoad(for: url, priority: priority, completion: completion)
+        }
+    }
+
+    private func enqueueImageLoad(
+        for url: URL,
+        priority: DispatchQoS.QoSClass,
+        completion: ((NSImage?) -> Void)?
+    ) {
+        if let cached = cache.object(forKey: url as NSURL) {
+            if let completion {
+                DispatchQueue.main.async {
+                    completion(cached)
+                }
+            }
+            return
+        }
+
         let key = ImageIdentity.cacheKey(for: url)
 
         stateQueue.async {
@@ -95,7 +115,7 @@ final class PreviewImageCache {
         cache.removeObject(forKey: url as NSURL)
 
         let key = ImageIdentity.cacheKey(for: url)
-        stateQueue.sync {
+        _ = stateQueue.sync {
             inFlight.removeValue(forKey: key)
         }
 
