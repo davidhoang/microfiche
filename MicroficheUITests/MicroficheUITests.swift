@@ -23,12 +23,18 @@ final class MicroficheUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
-        let app = XCUIApplication()
-        app.launch()
+    func testAppLaunchesTwice() throws {
+        let app = configuredApp()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        for attempt in 1...2 {
+            app.launch()
+            XCTAssertTrue(
+                app.windows.firstMatch.waitForExistence(timeout: 5),
+                "Expected a window on launch attempt \(attempt)"
+            )
+            app.terminate()
+            XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))
+        }
     }
 
     @MainActor
@@ -36,8 +42,19 @@ final class MicroficheUITests: XCTestCase {
         if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
             // This measures how long it takes to launch your application.
             measure(metrics: [XCTApplicationLaunchMetric()]) {
-                XCUIApplication().launch()
+                configuredApp().launch()
             }
         }
+    }
+
+    @MainActor
+    private func configuredApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState", "YES",
+            "-isOnboardingEnabled", "NO",
+            "-hasCompletedOnboarding", "YES"
+        ]
+        return app
     }
 }

@@ -138,6 +138,8 @@ struct ImageMetadataInspectorView: View {
     @State private var isEditingWhereFrom = false
     @State private var newTag = ""
     @State private var saveError: String?
+    @State private var technicalMetadata = PhotoTechnicalMetadataLoadState()
+    @State private var technicalMetadataReloadID = UUID()
 
     var body: some View {
         ScrollView {
@@ -179,6 +181,8 @@ struct ImageMetadataInspectorView: View {
 
                 fileInfoSection
 
+                technicalMetadataSection
+
                 if let saveError {
                     Text(saveError)
                         .font(.caption)
@@ -190,6 +194,9 @@ struct ImageMetadataInspectorView: View {
         }
         .task(id: file.id) {
             loadMetadata()
+        }
+        .task(id: technicalMetadataReloadID) {
+            await loadTechnicalMetadata()
         }
         .onDisappear {
             saveMetadata()
@@ -228,6 +235,49 @@ struct ImageMetadataInspectorView: View {
                 }
                 if let modificationDate = file.url.formattedModificationDate() {
                     InfoRow(label: "Modified", value: modificationDate)
+                }
+            }
+        }
+    }
+
+    private var technicalMetadataSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Technical")
+                .font(.headline)
+
+            switch technicalMetadata.phase {
+            case .idle, .loading:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Reading image metadata…")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption)
+
+            case .available(let metadata):
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(metadata.rows, id: \.0) { label, value in
+                        InfoRow(label: label, value: value)
+                    }
+                }
+
+            case .unavailable:
+                Text("No embedded photo metadata")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .italic()
+
+            case .failed(let message):
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button("Try Again") {
+                        technicalMetadataReloadID = UUID()
+                    }
+                    .controlSize(.small)
                 }
             }
         }
@@ -307,6 +357,26 @@ struct ImageMetadataInspectorView: View {
         } else if !local.labels.isEmpty {
             // Drop obsolete free-text labels once native labels own this field.
             persistLocalMetadata()
+        }
+    }
+
+    private func loadTechnicalMetadata() async {
+        let requestID = technicalMetadata.beginLoading()
+        let requestedURL = file.url
+        let outcome = await Task.detached(priority: .utility) {
+            do {
+                return PhotoTechnicalMetadataReadOutcome.success(
+                    try PhotoMetadataReader.read(from: requestedURL)
+                )
+            } catch {
+                return PhotoTechnicalMetadataReadOutcome.failure(error.localizedDescription)
+            }
+        }.value
+
+        if Task.isCancelled {
+            technicalMetadata.cancel(requestID: requestID)
+        } else {
+            technicalMetadata.finish(outcome, requestID: requestID)
         }
     }
 

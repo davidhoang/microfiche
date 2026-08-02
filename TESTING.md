@@ -72,9 +72,13 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   -scheme Microfiche \
   -configuration Debug \
   -destination 'platform=macOS' \
-  CODE_SIGNING_ALLOWED=NO \
   test
 ```
+
+Keep the test host's Debug ad-hoc signing enabled. macOS UI automation injects
+signed XCTest support frameworks into the app and the UI runner can exit before
+launch when `CODE_SIGNING_ALLOWED=NO` is applied to the entire test action.
+Use the unsigned override for standalone builds only.
 
 Use a temporary `-derivedDataPath` when isolation from local Xcode state is useful.
 

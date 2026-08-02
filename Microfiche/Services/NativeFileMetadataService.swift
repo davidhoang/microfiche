@@ -21,18 +21,20 @@ enum NativeFileMetadataService {
     private static let finderTagsAttribute = "com.apple.metadata:_kMDItemUserTags"
 
     static func load(from url: URL) -> NativeFileMetadata {
-        var label = FinderLabel.none
+        let resourceValues = try? url.resourceValues(forKeys: [.labelNumberKey, .tagNamesKey])
+        let label: FinderLabel
         var tagNames: [String] = []
 
-        if let values = try? url.resourceValues(forKeys: [.labelNumberKey, .tagNamesKey]) {
-            if let labelNumber = values.labelNumber {
-                label = FinderLabel(labelNumber: labelNumber)
-            } else if let finderLabel = readLabelFromFinderInfo(at: url) {
-                label = finderLabel
-            }
-            tagNames = Self.normalizeList(values.tagNames ?? [])
-        } else if let finderLabel = readLabelFromFinderInfo(at: url) {
+        // FinderInfo is the value Microfiche writes and is immediately consistent.
+        // `labelNumber` can briefly return 0 after that write on newer macOS releases.
+        if let finderLabel = readLabelFromFinderInfo(at: url) {
             label = finderLabel
+        } else {
+            label = FinderLabel(labelNumber: resourceValues?.labelNumber)
+        }
+
+        if let values = resourceValues {
+            tagNames = Self.normalizeList(values.tagNames ?? [])
         }
 
         let comment = (try? readFinderComment(from: url)) ?? ""
@@ -40,8 +42,10 @@ enum NativeFileMetadataService {
     }
 
     static func save(_ metadata: NativeFileMetadata, for url: URL) throws {
-        try setLabel(metadata.label, for: url)
+        // Setting Finder tags can rewrite FinderInfo, so apply the independent
+        // color label afterward to make the combined update atomic to callers.
         try setTagNames(metadata.tagNames, for: url)
+        try setLabel(metadata.label, for: url)
         try setComment(metadata.comment, for: url)
     }
 

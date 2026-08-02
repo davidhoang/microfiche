@@ -574,6 +574,58 @@ final class MicroficheTests: XCTestCase {
         XCTAssertTrue(cleared.comment.isEmpty)
     }
 
+    func testPhotoMetadataReaderReadsPNGDimensionsAndReportsMissingFiles() throws {
+        let pngData = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )!
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("microfiche-photo-metadata-\(UUID().uuidString).png")
+        try pngData.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let metadata = try XCTUnwrap(PhotoMetadataReader.read(from: url))
+        XCTAssertEqual(metadata.dimensions, "1 × 1")
+
+        try FileManager.default.removeItem(at: url)
+        XCTAssertThrowsError(try PhotoMetadataReader.read(from: url)) { error in
+            XCTAssertEqual(error as? PhotoMetadataReaderError, .fileUnavailable)
+        }
+    }
+
+    func testPhotoMetadataLoadStateCoversRepeatedStaleEmptyFailureAndCancellation() {
+        let available = PhotoTechnicalMetadata(
+            dimensions: "100 × 200",
+            captured: nil,
+            camera: nil,
+            lens: nil,
+            iso: nil,
+            aperture: nil,
+            shutterSpeed: nil
+        )
+        var state = PhotoTechnicalMetadataLoadState()
+
+        let staleRequest = state.beginLoading()
+        XCTAssertEqual(state.phase, .loading)
+
+        let currentRequest = state.beginLoading()
+        XCTAssertFalse(state.finish(.success(available), requestID: staleRequest))
+        XCTAssertEqual(state.phase, .loading)
+        XCTAssertTrue(state.finish(.success(available), requestID: currentRequest))
+        XCTAssertEqual(state.phase, .available(available))
+
+        let emptyRequest = state.beginLoading()
+        XCTAssertTrue(state.finish(.success(nil), requestID: emptyRequest))
+        XCTAssertEqual(state.phase, .unavailable)
+
+        let failedRequest = state.beginLoading()
+        XCTAssertTrue(state.finish(.failure("Unreadable"), requestID: failedRequest))
+        XCTAssertEqual(state.phase, .failed("Unreadable"))
+
+        let cancelledRequest = state.beginLoading()
+        XCTAssertTrue(state.cancel(requestID: cancelledRequest))
+        XCTAssertEqual(state.phase, .idle)
+    }
+
     func testPerformanceExample() throws {
         // This is an example of a performance test case.
         self.measure {
@@ -692,11 +744,17 @@ final class MicroficheTests: XCTestCase {
         XCTAssertTrue(store.hasConfiguredFolder)
         XCTAssertTrue(store.isAvailable)
         XCTAssertEqual(store.displayName, folder.lastPathComponent)
-        XCTAssertEqual(store.resolvedURL()?.path, folder.path)
+        XCTAssertEqual(
+            store.resolvedURL()?.standardizedFileURL.resolvingSymlinksInPath(),
+            folder.standardizedFileURL.resolvingSymlinksInPath()
+        )
 
         let restored = ArchiveFolderStore(defaults: defaults, fileManager: fileManager)
         XCTAssertTrue(restored.hasConfiguredFolder)
-        XCTAssertEqual(restored.resolvedURL()?.path, folder.path)
+        XCTAssertEqual(
+            restored.resolvedURL()?.standardizedFileURL.resolvingSymlinksInPath(),
+            folder.standardizedFileURL.resolvingSymlinksInPath()
+        )
 
         restored.clearFolder()
         XCTAssertFalse(restored.hasConfiguredFolder)

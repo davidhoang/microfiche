@@ -6,6 +6,17 @@
 import Foundation
 import ImageIO
 
+enum PhotoMetadataReaderError: LocalizedError, Equatable, Sendable {
+    case fileUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .fileUnavailable:
+            "The image file is no longer available."
+        }
+    }
+}
+
 struct PhotoTechnicalMetadata: Equatable, Sendable {
     let dimensions: String?
     let captured: String?
@@ -30,8 +41,67 @@ struct PhotoTechnicalMetadata: Equatable, Sendable {
     }
 }
 
+enum PhotoTechnicalMetadataReadOutcome: Equatable, Sendable {
+    case success(PhotoTechnicalMetadata?)
+    case failure(String)
+}
+
+struct PhotoTechnicalMetadataLoadState: Equatable, Sendable {
+    enum Phase: Equatable, Sendable {
+        case idle
+        case loading
+        case available(PhotoTechnicalMetadata)
+        case unavailable
+        case failed(String)
+    }
+
+    private(set) var phase: Phase = .idle
+    private var activeRequestID: UUID?
+
+    @discardableResult
+    mutating func beginLoading() -> UUID {
+        let requestID = UUID()
+        activeRequestID = requestID
+        phase = .loading
+        return requestID
+    }
+
+    @discardableResult
+    mutating func finish(
+        _ outcome: PhotoTechnicalMetadataReadOutcome,
+        requestID: UUID
+    ) -> Bool {
+        guard activeRequestID == requestID else { return false }
+        activeRequestID = nil
+
+        switch outcome {
+        case .success(let metadata):
+            if let metadata, !metadata.rows.isEmpty {
+                phase = .available(metadata)
+            } else {
+                phase = .unavailable
+            }
+        case .failure(let message):
+            phase = .failed(message)
+        }
+        return true
+    }
+
+    @discardableResult
+    mutating func cancel(requestID: UUID) -> Bool {
+        guard activeRequestID == requestID else { return false }
+        activeRequestID = nil
+        phase = .idle
+        return true
+    }
+}
+
 enum PhotoMetadataReader {
-    static func read(from url: URL) -> PhotoTechnicalMetadata? {
+    static func read(from url: URL) throws -> PhotoTechnicalMetadata? {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw PhotoMetadataReaderError.fileUnavailable
+        }
+
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
             return nil
