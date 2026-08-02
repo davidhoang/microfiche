@@ -487,14 +487,12 @@ struct GridCell: View {
             decodeSize: GridThumbnailSizing.decodeSize,
             aspectRatio: aspectRatio,
             isResizing: isResizing,
+            fitsAsset: true,
+            isSelected: isSelected,
+            isHovered: isHovered,
             onRename: onRename
         )
-        .frame(width: size, height: size / aspectRatio)
-        .contentSelectionChrome(isSelected: isSelected)
-        .contentHoverDynamics(
-            isHovered: isResizing ? false : isHovered,
-            isSelected: isSelected
-        )
+        .frame(width: size + 6, height: (size / aspectRatio) + 6)
         .contentShape(Rectangle())
         .onHover { hovering in
             guard !isResizing else {

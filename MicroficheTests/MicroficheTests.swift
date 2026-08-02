@@ -180,6 +180,23 @@ final class MicroficheTests: XCTestCase {
         )
     }
 
+    func testThumbnailFitSizingPreservesAssetAspectRatioInsideStableGridBounds() {
+        let bounds = CGSize(width: 180, height: 120)
+
+        XCTAssertEqual(
+            ThumbnailFitSizing.size(content: CGSize(width: 1_200, height: 800), bounding: bounds),
+            bounds
+        )
+        XCTAssertEqual(
+            ThumbnailFitSizing.size(content: CGSize(width: 800, height: 1_200), bounding: bounds),
+            CGSize(width: 80, height: 120)
+        )
+        XCTAssertEqual(
+            ThumbnailFitSizing.size(content: CGSize(width: 1_000, height: 1_000), bounding: bounds),
+            CGSize(width: 120, height: 120)
+        )
+    }
+
     func testGridThumbnailDecodeSizeIsStableAcrossSliderRange() {
         XCTAssertEqual(GridThumbnailSizing.decodeSize, GridThumbnailSizing.maximum)
         XCTAssertGreaterThanOrEqual(GridThumbnailSizing.decodeSize, GridThumbnailSizing.minimum)

@@ -7,6 +7,18 @@
 
 import SwiftUI
 
+enum ThumbnailFitSizing {
+    static func size(content: CGSize, bounding: CGSize) -> CGSize {
+        guard content.width > 0,
+              content.height > 0,
+              bounding.width > 0,
+              bounding.height > 0 else { return bounding }
+
+        let scale = min(bounding.width / content.width, bounding.height / content.height)
+        return CGSize(width: content.width * scale, height: content.height * scale)
+    }
+}
+
 // MARK: - Optimized Image Loading
 
 struct OptimizedAsyncImage: View {
@@ -14,6 +26,9 @@ struct OptimizedAsyncImage: View {
     let size: CGFloat
     var decodeSize: CGFloat? = nil
     var isResizing: Bool = false
+    var fitsAsset = false
+    var isSelected = false
+    var isHovered = false
 
     @State private var image: NSImage?
     @State private var isLoading = false
@@ -21,23 +36,56 @@ struct OptimizedAsyncImage: View {
 
     var body: some View {
         Group {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(isResizing ? .low : .high)
-                    .aspectRatio(contentMode: .fit)
-            } else if hasError {
-                Image(systemName: "photo")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: size * 0.3))
+            if fitsAsset {
+                GeometryReader { geometry in
+                    let fittedSize = ThumbnailFitSizing.size(
+                        content: image?.size ?? geometry.size,
+                        bounding: geometry.size
+                    )
+
+                    renderedContent
+                        .frame(width: fittedSize.width, height: fittedSize.height)
+                        .background(Color(NSColor.controlBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                        }
+                        .contentSelectionChrome(isSelected: isSelected)
+                        .contentHoverDynamics(
+                            isHovered: isResizing ? false : isHovered,
+                            isSelected: isSelected
+                        )
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: .center
+                        )
+                }
             } else {
-                thumbnailPlaceholder
+                renderedContent
             }
         }
         .task(id: cacheIdentity) {
             await MainActor.run {
                 loadImage()
             }
+        }
+    }
+
+    @ViewBuilder
+    private var renderedContent: some View {
+        if let image {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(isResizing ? .low : .high)
+                .aspectRatio(contentMode: .fit)
+        } else if hasError {
+            Image(systemName: "photo")
+                .foregroundColor(.secondary)
+                .font(.system(size: size * 0.3))
+        } else {
+            thumbnailPlaceholder
         }
     }
 
@@ -89,6 +137,9 @@ struct FileThumbnailView: View {
     let decodeSize: CGFloat?
     let aspectRatio: CGFloat
     let isResizing: Bool
+    let fitsAsset: Bool
+    let isSelected: Bool
+    let isHovered: Bool
     let onRename: (URL, String) -> Void
 
     init(
@@ -97,6 +148,9 @@ struct FileThumbnailView: View {
         decodeSize: CGFloat? = nil,
         aspectRatio: CGFloat = 1,
         isResizing: Bool = false,
+        fitsAsset: Bool = false,
+        isSelected: Bool = false,
+        isHovered: Bool = false,
         onRename: @escaping (URL, String) -> Void
     ) {
         self.file = file
@@ -104,28 +158,44 @@ struct FileThumbnailView: View {
         self.decodeSize = decodeSize
         self.aspectRatio = aspectRatio
         self.isResizing = isResizing
+        self.fitsAsset = fitsAsset
+        self.isSelected = isSelected
+        self.isHovered = isHovered
         self.onRename = onRename
     }
 
     var body: some View {
         let height = size / aspectRatio
 
-        ZStack {
-            Color(NSColor.controlBackgroundColor)
-
+        if fitsAsset {
             OptimizedAsyncImage(
                 url: file.url,
                 size: size,
                 decodeSize: decodeSize,
-                isResizing: isResizing
+                isResizing: isResizing,
+                fitsAsset: true,
+                isSelected: isSelected,
+                isHovered: isHovered
             )
             .frame(width: size, height: height)
-        }
-        .frame(width: size, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        } else {
+            ZStack {
+                Color(NSColor.controlBackgroundColor)
+
+                OptimizedAsyncImage(
+                    url: file.url,
+                    size: size,
+                    decodeSize: decodeSize,
+                    isResizing: isResizing
+                )
+                .frame(width: size, height: height)
+            }
+            .frame(width: size, height: height)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+            }
         }
     }
 }
