@@ -22,6 +22,7 @@ struct SidebarView: View {
     let onCreateContactSheet: () -> Void
     let onRenameContactSheet: (UUID, String) -> Void
     let onDeleteContactSheet: (UUID) -> Void
+    let onExportContactSheet: (UUID) -> Void
     let onDropToContactSheet: (UUID, [URL]) -> Void
 
     var body: some View {
@@ -100,6 +101,9 @@ struct SidebarView: View {
                                 },
                                 onDelete: {
                                     onDeleteContactSheet(sheet.id)
+                                },
+                                onExport: {
+                                    onExportContactSheet(sheet.id)
                                 },
                                 onDrop: { urls in
                                     onDropToContactSheet(sheet.id, urls)
@@ -405,14 +409,16 @@ struct ContactSheetSidebarItem: View {
     let onSelect: () -> Void
     let onRename: (String) -> Void
     let onDelete: () -> Void
+    let onExport: () -> Void
     let onDrop: ([URL]) -> Void
 
-    init(contactSheet: ContactSheet, isSelected: Bool, onSelect: @escaping () -> Void, onRename: @escaping (String) -> Void, onDelete: @escaping () -> Void, onDrop: @escaping ([URL]) -> Void) {
+    init(contactSheet: ContactSheet, isSelected: Bool, onSelect: @escaping () -> Void, onRename: @escaping (String) -> Void, onDelete: @escaping () -> Void, onExport: @escaping () -> Void, onDrop: @escaping ([URL]) -> Void) {
         self.contactSheet = contactSheet
         self.isSelected = isSelected
         self.onSelect = onSelect
         self.onRename = onRename
         self.onDelete = onDelete
+        self.onExport = onExport
         self.onDrop = onDrop
         _editedName = State(initialValue: contactSheet.name)
     }
@@ -481,6 +487,10 @@ struct ContactSheetSidebarItem: View {
         )
         .accessibilityIdentifier("contact-sheet-\(contactSheet.id.uuidString)-drop-target")
         .contextMenu {
+            Button("Export PDF…") {
+                onExport()
+            }
+            Divider()
             Button("Rename") {
                 beginRenaming()
             }

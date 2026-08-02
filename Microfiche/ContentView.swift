@@ -87,6 +87,13 @@ enum ImageNavigation {
     }
 }
 
+private struct ContactSheetExportPresentation: Identifiable {
+    let contactSheet: ContactSheet
+    let items: [ContactSheetExportItem]
+
+    var id: UUID { contactSheet.id }
+}
+
 // MARK: - Content View
 
 struct ContentView: View {
@@ -116,6 +123,7 @@ struct ContentView: View {
     @State private var scrollToID: UUID?
     @State private var gridColumnCount: Int = 1
     @State private var libraryPath: [LibraryRoute] = []
+    @State private var contactSheetExportPresentation: ContactSheetExportPresentation?
     @AppStorage("libraryMetadataInspectorPresented") private var isMetadataInspectorPresented = false
     @AppStorage("detailMetadataPresented") private var isDetailMetadataPresented = true
     @AppStorage("librarySidebarCollapsed") private var isLibrarySidebarCollapsed = false
@@ -297,6 +305,12 @@ struct ContentView: View {
             restoreLibrarySelection()
             userPreferences.evaluateLaunchPresentation()
         }
+        .sheet(item: $contactSheetExportPresentation) { presentation in
+            ContactSheetExportView(
+                contactSheet: presentation.contactSheet,
+                items: presentation.items
+            )
+        }
     }
 
     private var libraryContainer: AnyView {
@@ -327,6 +341,7 @@ struct ContentView: View {
                             selection = .all
                         }
                     },
+                    onExportContactSheet: presentContactSheetExport,
                     onDropToContactSheet: { sheetID, urls in
                         handleDropToContactSheet(sheetID: sheetID, urls: urls)
                     }
@@ -428,6 +443,20 @@ struct ContentView: View {
                 .help(isMetadataInspectorPresented ? "Hide Info" : "Show Info")
             }
             .hideSharedBackgroundIfAvailable()
+
+            if let activeContactSheet {
+                ToolbarItem {
+                    Button {
+                        presentContactSheetExport(sheetID: activeContactSheet.id)
+                    } label: {
+                        Image(systemName: "doc.badge.arrow.up")
+                    }
+                    .help("Export Contact Sheet")
+                    .accessibilityLabel("Export \(activeContactSheet.name)")
+                    .accessibilityIdentifier("export-contact-sheet")
+                }
+                .hideSharedBackgroundIfAvailable()
+            }
         }
     }
 
@@ -597,6 +626,47 @@ struct ContentView: View {
     }
 
     // MARK: - Contact Sheets
+
+    private func presentContactSheetExport(sheetID: UUID) {
+        guard let contactSheet = contactSheetStorage.contactSheets.first(where: {
+            $0.id == sheetID
+        }) else { return }
+
+        let records = contactSheetStorage.getImageRecords(for: sheetID)
+        let items = records.map(makeContactSheetExportItem)
+        contactSheetExportPresentation = ContactSheetExportPresentation(
+            contactSheet: contactSheet,
+            items: items
+        )
+    }
+
+    private func makeContactSheetExportItem(
+        from record: ContactSheetImage
+    ) -> ContactSheetExportItem {
+        let fileManager = FileManager.default
+        let originalExists = fileManager.fileExists(atPath: record.originalURL.path)
+        let storedExists = fileManager.fileExists(atPath: record.storedURL.path)
+        let imageURL = storedExists
+            ? record.storedURL
+            : (originalExists ? record.originalURL : record.storedURL)
+        let metadataURL = originalExists ? record.originalURL : record.storedURL
+
+        let native = NativeFileMetadataService.load(from: metadataURL)
+        var local = ImageMetadataStore.shared.metadata(for: record.originalURL)
+        if local.isEmpty {
+            local = ImageMetadataStore.shared.metadata(for: record.storedURL)
+        }
+
+        return ContactSheetExportItem(
+            id: record.id,
+            fileName: record.fileName,
+            imageURL: imageURL,
+            finderLabel: native.label == .none ? nil : native.label.displayName,
+            tags: native.tagNames.isEmpty ? local.tags : native.tagNames,
+            comments: native.comment.isEmpty ? local.comments : native.comment,
+            source: local.whereFrom
+        )
+    }
 
     private func handleDropToContactSheet(sheetID: UUID, urls: [URL]) {
         let supportedURLs = urls.filter {

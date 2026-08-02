@@ -142,6 +142,17 @@ class ContactSheetStorage: ObservableObject {
         }
     }
 
+    /// Preserves contact-sheet order and original filenames for portable exports.
+    /// Records remain present when a stored file is missing so the exporter can
+    /// draw a placeholder and report the unavailable image.
+    func getImageRecords(for contactSheetID: UUID) -> [ContactSheetImage] {
+        guard let contactSheet = contactSheets.first(where: { $0.id == contactSheetID }) else {
+            return []
+        }
+
+        return contactSheet.imageIDs.compactMap { imageMap[$0] }
+    }
+
     // MARK: - Private Helpers
 
     private func existingImageID(for sourceURL: URL) -> UUID? {
