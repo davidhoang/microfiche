@@ -5,6 +5,7 @@
 //  Created by David Hoang on 6/8/25.
 //
 
+import PDFKit
 import XCTest
 @testable import Microfiche
 
@@ -407,6 +408,248 @@ final class MicroficheTests: XCTestCase {
         XCTAssertEqual(secondID, firstID)
         XCTAssertEqual(storage.getImages(for: firstSheet.id).count, 1)
         XCTAssertEqual(storage.getImages(for: secondSheet.id).count, 1)
+    }
+
+    func testContactSheetExportRecordsPreserveOrderWhenStoredImageIsMissing() throws {
+        let fileManager = FileManager.default
+        let testDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-contact-sheet-export-records-\(UUID().uuidString)")
+        let firstURL = testDirectory.appendingPathComponent("first.png")
+        let secondURL = testDirectory.appendingPathComponent("second.png")
+        let pngData = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )!
+
+        try fileManager.createDirectory(at: testDirectory, withIntermediateDirectories: true)
+        try pngData.write(to: firstURL)
+        try pngData.write(to: secondURL)
+        defer { try? fileManager.removeItem(at: testDirectory) }
+
+        let storage = ContactSheetStorage(baseDirectory: testDirectory, fileManager: fileManager)
+        let sheet = storage.createContactSheet(name: "Export Order")
+        XCTAssertEqual(storage.addImages(from: [firstURL, secondURL], to: sheet.id).count, 2)
+
+        let records = storage.getImageRecords(for: sheet.id)
+        XCTAssertEqual(records.map(\.fileName), ["first.png", "second.png"])
+        try fileManager.removeItem(at: records[0].storedURL)
+
+        let recordsAfterRemoval = storage.getImageRecords(for: sheet.id)
+        XCTAssertEqual(recordsAfterRemoval.map(\.fileName), ["first.png", "second.png"])
+        XCTAssertFalse(fileManager.fileExists(atPath: recordsAfterRemoval[0].storedURL.path))
+    }
+
+    func testContactSheetPDFLayoutSupportsPaperOrientationMarginsAndPagination() {
+        var portraitOptions = ContactSheetExportOptions()
+        portraitOptions.paperSize = .letter
+        portraitOptions.orientation = .portrait
+        portraitOptions.columns = 4
+        portraitOptions.margin = 36
+        let portrait = ContactSheetPDFLayout(itemCount: 1, options: portraitOptions)
+
+        XCTAssertEqual(portrait.pageSize.width, 612, accuracy: 0.01)
+        XCTAssertEqual(portrait.pageSize.height, 792, accuracy: 0.01)
+        XCTAssertEqual(portrait.columns, 4)
+        XCTAssertGreaterThanOrEqual(portrait.rowsPerPage, 1)
+
+        let multiPage = ContactSheetPDFLayout(
+            itemCount: portrait.itemsPerPage + 1,
+            options: portraitOptions
+        )
+        XCTAssertEqual(multiPage.pageCount, 2)
+
+        var landscapeOptions = portraitOptions
+        landscapeOptions.paperSize = .a4
+        landscapeOptions.orientation = .landscape
+        landscapeOptions.columns = 6
+        landscapeOptions.margin = 72
+        let landscape = ContactSheetPDFLayout(itemCount: 1, options: landscapeOptions)
+
+        XCTAssertEqual(landscape.pageSize.width, 841.89, accuracy: 0.01)
+        XCTAssertEqual(landscape.pageSize.height, 595.28, accuracy: 0.01)
+        XCTAssertEqual(landscape.columns, 6)
+        XCTAssertEqual(landscape.contentRect.minX, 72, accuracy: 0.01)
+        let firstItemRect = landscape.itemRect(at: 0)
+        XCTAssertGreaterThanOrEqual(firstItemRect.minX, landscape.contentRect.minX - 0.01)
+        XCTAssertLessThanOrEqual(firstItemRect.maxX, landscape.contentRect.maxX + 0.01)
+        XCTAssertGreaterThanOrEqual(firstItemRect.minY, landscape.contentRect.minY - 0.01)
+        XCTAssertLessThanOrEqual(firstItemRect.maxY, landscape.contentRect.maxY + 0.01)
+
+        var normalizedOptions = portraitOptions
+        normalizedOptions.margin = 500
+        normalizedOptions.columns = 99
+        XCTAssertEqual(normalizedOptions.normalized.margin, 72)
+        XCTAssertEqual(normalizedOptions.normalized.columns, 6)
+    }
+
+    func testContactSheetPDFExporterRendersEmptyAndMissingImageStates() throws {
+        let emptyExport = try ContactSheetPDFExporter.render(
+            title: "Empty Sheet",
+            items: [],
+            options: ContactSheetExportOptions()
+        )
+        let emptyDocument = try XCTUnwrap(PDFDocument(data: emptyExport.data))
+
+        XCTAssertEqual(emptyDocument.pageCount, 1)
+        XCTAssertTrue(emptyDocument.string?.contains("No images in this contact sheet") == true)
+        XCTAssertTrue(emptyExport.unavailableImageNames.isEmpty)
+
+        let missingURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("missing-\(UUID().uuidString).jpg")
+        let missingItem = ContactSheetExportItem(
+            id: UUID(),
+            fileName: "offline-photo.jpg",
+            imageURL: missingURL,
+            finderLabel: nil,
+            tags: [],
+            comments: "",
+            source: ""
+        )
+        let missingExport = try ContactSheetPDFExporter.render(
+            title: "Offline Sheet",
+            items: [missingItem],
+            options: ContactSheetExportOptions()
+        )
+        let missingDocument = try XCTUnwrap(PDFDocument(data: missingExport.data))
+
+        XCTAssertEqual(missingDocument.pageCount, 1)
+        XCTAssertEqual(missingExport.unavailableImageNames, ["offline-photo.jpg"])
+        XCTAssertTrue(missingDocument.string?.contains("Image unavailable") == true)
+        XCTAssertTrue(missingDocument.string?.contains("offline-photo.jpg") == true)
+    }
+
+    func testContactSheetPDFExporterIncludesMetadataAcrossRepeatedMultiPageExports() throws {
+        let fileManager = FileManager.default
+        let imageURL = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-pdf-export-\(UUID().uuidString).png")
+        let pngData = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )!
+        try pngData.write(to: imageURL)
+        defer { try? fileManager.removeItem(at: imageURL) }
+
+        var options = ContactSheetExportOptions()
+        options.columns = 2
+        options.captions = ContactSheetCaptionOptions(
+            includesFilename: true,
+            includesFinderLabel: true,
+            includesTags: true,
+            includesComments: true,
+            includesSource: true
+        )
+        let layout = ContactSheetPDFLayout(itemCount: 1, options: options)
+        let itemCount = layout.itemsPerPage + 1
+        let items = (0..<itemCount).map { index in
+            ContactSheetExportItem(
+                id: UUID(),
+                fileName: "photo-\(index).png",
+                imageURL: imageURL,
+                finderLabel: "Orange",
+                tags: ["keeper", "portrait"],
+                comments: "Looks\n good",
+                source: "Camera roll"
+            )
+        }
+
+        for _ in 0..<2 {
+            let export = try ContactSheetPDFExporter.render(
+                title: "Repeated Export",
+                items: items,
+                options: options
+            )
+            let document = try XCTUnwrap(PDFDocument(data: export.data))
+            let extractedText = document.string ?? ""
+
+            XCTAssertEqual(document.pageCount, 2)
+            XCTAssertTrue(export.unavailableImageNames.isEmpty)
+            XCTAssertTrue(extractedText.contains("photo-0.png"))
+            XCTAssertTrue(extractedText.contains("Label: Orange"))
+            XCTAssertTrue(extractedText.contains("Tags: keeper, portrait"))
+            XCTAssertTrue(extractedText.contains("Comments: Looks good"))
+            XCTAssertTrue(extractedText.contains("Source: Camera roll"))
+        }
+    }
+
+    func testContactSheetExportPreviewStateRejectsStaleResultsAndSupportsRetryAndCancellation() {
+        var state = ContactSheetExportPreviewState()
+        let options = ContactSheetExportOptions()
+        let export = ContactSheetPDFExport(
+            data: Data([0x25, 0x50, 0x44, 0x46]),
+            layout: ContactSheetPDFLayout(itemCount: 0, options: options),
+            unavailableImageNames: []
+        )
+
+        let firstRequest = state.beginLoading()
+        let secondRequest = state.beginLoading()
+        XCTAssertFalse(state.finish(.success(export), requestID: firstRequest))
+        XCTAssertEqual(state.phase, .loading)
+        XCTAssertTrue(state.finish(.success(export), requestID: secondRequest))
+        XCTAssertEqual(state.phase, .ready(export))
+
+        let failedRequest = state.beginLoading()
+        XCTAssertTrue(state.finish(.failure(.unableToCreateContext), requestID: failedRequest))
+        guard case .failed(let message) = state.phase else {
+            return XCTFail("Expected failed preview state")
+        }
+        XCTAssertFalse(message.isEmpty)
+
+        let retryRequest = state.beginLoading()
+        XCTAssertEqual(state.phase, .loading)
+        XCTAssertTrue(state.cancel(requestID: retryRequest))
+        XCTAssertEqual(state.phase, .idle)
+        XCTAssertFalse(state.cancel(requestID: retryRequest))
+    }
+
+    func testContactSheetExportSuggestedFilenameIsPortable() {
+        XCTAssertEqual(
+            ContactSheetPDFExporter.suggestedFilename(for: "Client Review / Finals"),
+            "Client-Review-Finals.pdf"
+        )
+        XCTAssertEqual(ContactSheetPDFExporter.suggestedFilename(for: "///"), "Contact-Sheet.pdf")
+    }
+
+    func testContactSheetCaptionOptionsCanHideOrShowEveryMetadataField() {
+        let item = ContactSheetExportItem(
+            id: UUID(),
+            fileName: "selected.jpg",
+            imageURL: URL(fileURLWithPath: "/tmp/selected.jpg"),
+            finderLabel: "Purple",
+            tags: ["hero", "approved"],
+            comments: "Line one\nline two",
+            source: "Campaign library"
+        )
+        let hidden = ContactSheetCaptionOptions(
+            includesFilename: false,
+            includesFinderLabel: false,
+            includesTags: false,
+            includesComments: false,
+            includesSource: false
+        )
+        let shown = ContactSheetCaptionOptions(
+            includesFilename: true,
+            includesFinderLabel: true,
+            includesTags: true,
+            includesComments: true,
+            includesSource: true
+        )
+
+        XCTAssertTrue(item.captionLines(using: hidden).isEmpty)
+        XCTAssertEqual(
+            item.captionLines(using: shown),
+            [
+                "selected.jpg",
+                "Label: Purple",
+                "Tags: hero, approved",
+                "Comments: Line one line two",
+                "Source: Campaign library"
+            ]
+        )
+
+        var hiddenOptions = ContactSheetExportOptions()
+        hiddenOptions.captions = hidden
+        XCTAssertEqual(
+            ContactSheetPDFLayout(itemCount: 1, options: hiddenOptions).captionHeight,
+            0
+        )
     }
 
     func testImageDropPayloadLoadsMultipleFileURLsOnceInProviderOrder() throws {
