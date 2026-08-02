@@ -26,6 +26,12 @@ enum GridThumbnailSizing {
     static let minimum: CGFloat = 80
     static let defaultValue: CGFloat = 120
     static let maximum: CGFloat = 180
+    static let step: CGFloat = 1
+
+    static func normalized(_ value: CGFloat) -> CGFloat {
+        let clamped = min(max(value, minimum), maximum)
+        return (clamped / step).rounded() * step
+    }
 
     /// Decode once at the largest grid size so the size slider only changes
     /// layout frames and can scale already-resident bitmaps without reloading.
@@ -94,6 +100,25 @@ private struct ContactSheetExportPresentation: Identifiable {
     var id: UUID { contactSheet.id }
 }
 
+private struct DeletedFileRecord {
+    let file: ImageFile
+    let trashURL: URL
+    let originalIndex: Int
+    let metadata: ImageMetadata
+
+    var location: TrashedFileLocation {
+        TrashedFileLocation(originalURL: file.url, trashURL: trashURL)
+    }
+}
+
+private struct DeletedViewState {
+    let selection: Selection?
+    let selectedImageFileIDs: Set<UUID>
+    let focusedImageFileID: UUID?
+    let libraryPath: [LibraryRoute]
+    let isQuickPreviewPresented: Bool
+}
+
 // MARK: - Content View
 
 struct ContentView: View {
@@ -116,6 +141,7 @@ struct ContentView: View {
     @State private var showDeleteAlert: Bool = false
     @State private var dontAskAgain: Bool = UserDefaults.standard.bool(forKey: "dontAskDeleteConfirm")
     @State private var pendingDeleteFiles: [ImageFile] = []
+    @State private var deleteErrorMessage: String?
     @State private var showChooseArchiveAlert = false
     @State private var pendingArchiveFiles: [ImageFile] = []
     @State private var archiveErrorMessage: String?
@@ -134,6 +160,7 @@ struct ContentView: View {
     @StateObject private var userPreferences = UserPreferences.shared
     @StateObject private var archiveFolderStore = ArchiveFolderStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.undoManager) private var undoManager
 
     let supportedExtensions = ["jpg", "jpeg", "png", "pdf", "svg", "gif", "tiff"]
 
@@ -242,6 +269,17 @@ struct ContentView: View {
                         "Are you sure you want to move \(pendingDeleteFiles.first?.name ?? "this file") to the Trash?" :
                         "Are you sure you want to move \(fileCount) items to the Trash?"
                     Text(messageText)
+                }
+                .alert(
+                    "Couldn’t Undo Delete",
+                    isPresented: Binding(
+                        get: { deleteErrorMessage != nil },
+                        set: { if !$0 { deleteErrorMessage = nil } }
+                    )
+                ) {
+                    Button("OK") { deleteErrorMessage = nil }
+                } message: {
+                    Text(deleteErrorMessage ?? "")
                 }
                 .alert(
                     "External Drive Remembered",
@@ -411,11 +449,13 @@ struct ContentView: View {
                         Slider(
                             value: gridThumbnailSizeBinding,
                             in: GridThumbnailSizing.minimum...GridThumbnailSizing.maximum,
+                            step: GridThumbnailSizing.step,
                             onEditingChanged: handleGridResize
                         )
                         .frame(width: 110)
                         .accessibilityLabel("Thumbnail size")
                         .accessibilityValue("\(Int(displayedGridThumbnailSize.rounded())) points")
+                        .accessibilityIdentifier("thumbnail-size-slider")
 
                         Image(systemName: "photo.fill")
                             .font(.system(size: 15))
@@ -531,9 +571,12 @@ struct ContentView: View {
         Binding(
             get: { displayedGridThumbnailSize },
             set: { newValue in
-                liveGridThumbnailSize = newValue
+                let normalizedValue = GridThumbnailSizing.normalized(newValue)
+                guard normalizedValue != displayedGridThumbnailSize else { return }
+
+                liveGridThumbnailSize = normalizedValue
                 if !isResizingGrid {
-                    gridThumbnailSize = newValue
+                    gridThumbnailSize = normalizedValue
                 }
             }
         )
@@ -865,21 +908,43 @@ struct ContentView: View {
             previewIndex = idx
         }
         let originalFilesSnapshot = imageFiles
+        let deletedViewState = DeletedViewState(
+            selection: selection,
+            selectedImageFileIDs: selectedImageFileIDs,
+            focusedImageFileID: focusedImageFileID,
+            libraryPath: libraryPath,
+            isQuickPreviewPresented: isQuickPreviewPresented
+        )
         let anchorIndexBeforeDeletion: Int? = files
             .compactMap { file in originalFilesSnapshot.firstIndex(of: file) }
             .min()
 
-        var trashedURLs: [URL] = []
+        var deletedRecords: [DeletedFileRecord] = []
         for file in files {
             do {
-                try FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
+                var resultingURL: NSURL?
+                let originalIndex = originalFilesSnapshot.firstIndex(of: file) ?? imageFiles.count
+                let metadata = ImageMetadataStore.shared.metadata(for: file.url)
+                try FileManager.default.trashItem(at: file.url, resultingItemURL: &resultingURL)
+                guard let trashURL = resultingURL as URL? else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+
                 imageFiles.removeAll { $0.id == file.id }
                 selectedImageFileIDs.remove(file.id)
-                trashedURLs.append(file.url)
+                deletedRecords.append(
+                    DeletedFileRecord(
+                        file: file,
+                        trashURL: trashURL,
+                        originalIndex: originalIndex,
+                        metadata: metadata
+                    )
+                )
             } catch {
                 print("Error moving file to trash: \(error)")
             }
         }
+        let trashedURLs = deletedRecords.map(\.file.url)
         ImageMetadataStore.shared.remove(for: trashedURLs)
         for url in trashedURLs {
             ImageCache.shared.clearCacheForFile(at: url)
@@ -892,6 +957,61 @@ struct ContentView: View {
             previewIndex: previewIndex,
             anchorIndexBeforeRemoval: anchorIndexBeforeDeletion
         )
+
+        registerDeleteUndo(records: deletedRecords, viewState: deletedViewState)
+    }
+
+    private func registerDeleteUndo(
+        records: [DeletedFileRecord],
+        viewState: DeletedViewState
+    ) {
+        guard !records.isEmpty, let undoManager else { return }
+
+        undoManager.registerUndo(withTarget: libraryStorage) { _ in
+            restoreDeletedFiles(records, viewState: viewState)
+        }
+        let actionName = records.count == 1
+            ? "Delete \(records[0].file.name)"
+            : "Delete \(records.count) Images"
+        undoManager.setActionName(actionName)
+    }
+
+    private func restoreDeletedFiles(
+        _ records: [DeletedFileRecord],
+        viewState: DeletedViewState
+    ) {
+        let result = TrashRestorer.restore(records.map(\.location))
+        let restoredLocations = Set(result.restored.map(\.trashURL))
+        let restoredRecords = records
+            .filter { restoredLocations.contains($0.trashURL) }
+            .sorted { $0.originalIndex < $1.originalIndex }
+
+        for record in restoredRecords {
+            ImageMetadataStore.shared.save(record.metadata, for: record.file.url)
+        }
+
+        if selection == viewState.selection {
+            for record in restoredRecords where !imageFiles.contains(record.file) {
+                let insertionIndex = min(record.originalIndex, imageFiles.count)
+                imageFiles.insert(record.file, at: insertionIndex)
+            }
+
+            let availableIDs = Set(imageFiles.map(\.id))
+            selectedImageFileIDs = viewState.selectedImageFileIDs.intersection(availableIDs)
+            focusedImageFileID = viewState.focusedImageFileID.flatMap {
+                availableIDs.contains($0) ? $0 : nil
+            }
+            libraryPath = viewState.libraryPath.filter { availableIDs.contains($0.imageID) }
+            isQuickPreviewPresented = viewState.isQuickPreviewPresented && focusedImageFileID != nil
+            requestScrollToFocusedImage()
+        }
+
+        if !result.failed.isEmpty {
+            let restoredCount = result.restored.count
+            deleteErrorMessage = restoredCount == 0
+                ? "The deleted images could not be restored. Their original locations may be unavailable or already contain files with the same names."
+                : "Restored \(restoredCount) of \(records.count) images. Some original locations may be unavailable or already contain files with the same names."
+        }
     }
 
     private func updateFocusAfterRemovingFiles(

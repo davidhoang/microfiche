@@ -53,6 +53,41 @@ final class MicroficheTests: XCTestCase {
         wait(for: [expectation], timeout: 3.0)
     }
 
+    func testImageCacheCreatesRetinaResolutionThumbnail() throws {
+        let width = 1_200
+        let height = 800
+        let bitmap = try XCTUnwrap(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: width,
+                pixelsHigh: height,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            )
+        )
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("microfiche-retina-thumbnail-\(UUID().uuidString).png")
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        ImageCache.shared.clearCacheForFile(at: url)
+        let expectation = expectation(description: "Retina thumbnail load completes")
+        ImageCache.shared.loadImage(for: url, size: 180) { image in
+            let cgImage = image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            XCTAssertEqual(cgImage?.width, 360)
+            XCTAssertEqual(cgImage?.height, 240)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 3.0)
+        ImageCache.shared.clearCacheForFile(at: url)
+    }
+
     func testImageIdentityCacheKeyIsStableAndPathNormalized() {
         let plain = URL(fileURLWithPath: "/Users/example/Pictures/photo.png")
         let withDot = URL(fileURLWithPath: "/Users/example/Pictures/./photo.png")
@@ -149,6 +184,51 @@ final class MicroficheTests: XCTestCase {
         XCTAssertEqual(GridThumbnailSizing.decodeSize, GridThumbnailSizing.maximum)
         XCTAssertGreaterThanOrEqual(GridThumbnailSizing.decodeSize, GridThumbnailSizing.minimum)
         XCTAssertGreaterThanOrEqual(GridThumbnailSizing.decodeSize, GridThumbnailSizing.defaultValue)
+    }
+
+    func testGridThumbnailSizeNormalizesToWholePointsAndBounds() {
+        XCTAssertEqual(GridThumbnailSizing.normalized(119.49), 119)
+        XCTAssertEqual(GridThumbnailSizing.normalized(119.51), 120)
+        XCTAssertEqual(GridThumbnailSizing.normalized(GridThumbnailSizing.minimum - 20), 80)
+        XCTAssertEqual(GridThumbnailSizing.normalized(GridThumbnailSizing.maximum + 20), 180)
+    }
+
+    func testTrashRestorerRestoresRepeatedFilesAndPreservesConflicts() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-trash-restore-\(UUID().uuidString)", isDirectory: true)
+        let originalFolder = root.appendingPathComponent("original", isDirectory: true)
+        let trashFolder = root.appendingPathComponent("trash", isDirectory: true)
+        try fileManager.createDirectory(at: originalFolder, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: trashFolder, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let firstOriginal = originalFolder.appendingPathComponent("first.png")
+        let secondOriginal = originalFolder.appendingPathComponent("second.png")
+        let firstTrash = trashFolder.appendingPathComponent("first.png")
+        let secondTrash = trashFolder.appendingPathComponent("second.png")
+        try Data("first".utf8).write(to: firstTrash)
+        try Data("second".utf8).write(to: secondTrash)
+
+        let records = [
+            TrashedFileLocation(originalURL: firstOriginal, trashURL: firstTrash),
+            TrashedFileLocation(originalURL: secondOriginal, trashURL: secondTrash)
+        ]
+        let firstResult = TrashRestorer.restore(records, fileManager: fileManager)
+        XCTAssertEqual(firstResult.restored, records)
+        XCTAssertTrue(firstResult.failed.isEmpty)
+        XCTAssertTrue(fileManager.fileExists(atPath: firstOriginal.path))
+        XCTAssertTrue(fileManager.fileExists(atPath: secondOriginal.path))
+
+        try Data("replacement".utf8).write(to: firstTrash)
+        let repeatedResult = TrashRestorer.restore(
+            [TrashedFileLocation(originalURL: firstOriginal, trashURL: firstTrash)],
+            fileManager: fileManager
+        )
+        XCTAssertTrue(repeatedResult.restored.isEmpty)
+        XCTAssertEqual(repeatedResult.failed.count, 1)
+        XCTAssertEqual(try Data(contentsOf: firstOriginal), Data("first".utf8))
+        XCTAssertEqual(try Data(contentsOf: firstTrash), Data("replacement".utf8))
     }
 
     func testGridNavigationMovesByCurrentColumnCount() {

@@ -18,14 +18,13 @@ struct OptimizedAsyncImage: View {
     @State private var image: NSImage?
     @State private var isLoading = false
     @State private var hasError = false
-    @State private var activeDecodeSize: CGFloat?
 
     var body: some View {
         Group {
             if let image {
                 Image(nsImage: image)
                     .resizable()
-                    .interpolation(isResizing ? .low : .medium)
+                    .interpolation(isResizing ? .low : .high)
                     .aspectRatio(contentMode: .fit)
             } else if hasError {
                 Image(systemName: "photo")
@@ -35,16 +34,6 @@ struct OptimizedAsyncImage: View {
                 thumbnailPlaceholder
             }
         }
-        .onAppear(perform: syncActiveDecodeSize)
-        .onChange(of: size) { _, _ in
-            syncActiveDecodeSize()
-        }
-        .onChange(of: decodeSize) { _, _ in
-            syncActiveDecodeSize()
-        }
-        .onChange(of: isResizing) { _, _ in
-            syncActiveDecodeSize()
-        }
         .task(id: cacheIdentity) {
             await MainActor.run {
                 loadImage()
@@ -53,7 +42,7 @@ struct OptimizedAsyncImage: View {
     }
 
     private var resolvedDecodeSize: CGFloat {
-        activeDecodeSize ?? decodeSize ?? size
+        decodeSize ?? size
     }
 
     private var cacheIdentity: String {
@@ -63,21 +52,6 @@ struct OptimizedAsyncImage: View {
     private var thumbnailPlaceholder: some View {
         RoundedRectangle(cornerRadius: 6, style: .continuous)
             .fill(Color(NSColor.quaternaryLabelColor).opacity(isLoading ? 0.18 : 0.12))
-    }
-
-    private func syncActiveDecodeSize() {
-        let target = decodeSize ?? size
-
-        if isResizing {
-            if activeDecodeSize == nil {
-                activeDecodeSize = target
-            }
-            return
-        }
-
-        if activeDecodeSize != target {
-            activeDecodeSize = target
-        }
     }
 
     private func loadImage() {

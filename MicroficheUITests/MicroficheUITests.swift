@@ -38,6 +38,36 @@ final class MicroficheUITests: XCTestCase {
     }
 
     @MainActor
+    func testThumbnailSizeSliderSupportsRepeatedAdjustments() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let slider = app.sliders["thumbnail-size-slider"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+
+        drag(slider, from: 0.5, to: 0.2)
+        let smallerValue = try XCTUnwrap(slider.value as? String)
+
+        drag(slider, from: 0.2, to: 0.8)
+        let largerValue = try XCTUnwrap(slider.value as? String)
+        XCTAssertNotEqual(largerValue, smallerValue)
+
+        drag(slider, from: 0.8, to: 0.2)
+        XCTAssertEqual(slider.value as? String, smallerValue)
+    }
+
+    @MainActor
+    private func drag(_ slider: XCUIElement, from start: CGFloat, to end: CGFloat) {
+        let startCoordinate = slider.coordinate(
+            withNormalizedOffset: CGVector(dx: start, dy: 0.5)
+        )
+        let endCoordinate = slider.coordinate(
+            withNormalizedOffset: CGVector(dx: end, dy: 0.5)
+        )
+        startCoordinate.press(forDuration: 0.05, thenDragTo: endCoordinate)
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
             // This measures how long it takes to launch your application.

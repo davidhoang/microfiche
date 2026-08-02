@@ -13,6 +13,9 @@ import PDFKit
 final class ImageCache {
     static let shared = ImageCache()
 
+    static let thumbnailPixelScale: CGFloat = 2
+    private static let cacheVersion = 2
+
     typealias Completion = (NSImage?) -> Void
 
     private let cache = NSCache<NSString, NSImage>()
@@ -27,6 +30,7 @@ final class ImageCache {
         let cachesDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
         cacheDirectory = cachesDirectory.appendingPathComponent("MicroficheThumbnails")
         try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        removeObsoleteDiskThumbnails()
 
         cache.countLimit = 300
         cache.totalCostLimit = 80 * 1024 * 1024
@@ -188,7 +192,7 @@ final class ImageCache {
             return NSImage(contentsOf: url)
         }
 
-        let maxPixelSize = max(1, Int(ceil(size * 2)))
+        let maxPixelSize = max(1, Int(ceil(size * Self.thumbnailPixelScale)))
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -212,7 +216,13 @@ final class ImageCache {
             return nil
         }
 
-        return page.thumbnail(of: .init(width: size * 2, height: size * 2), for: .cropBox)
+        return page.thumbnail(
+            of: .init(
+                width: size * Self.thumbnailPixelScale,
+                height: size * Self.thumbnailPixelScale
+            ),
+            for: .cropBox
+        )
     }
 
     private func persistImage(_ image: NSImage, forKey key: String) {
@@ -233,7 +243,22 @@ final class ImageCache {
     private func cacheKey(for url: URL, size: CGFloat) -> String {
         let pathKey = ImageIdentity.cacheKey(for: url)
         let sizeString = String(format: "%.0f", size)
-        return "\(pathKey)_\(sizeString)"
+        return "\(pathKey)_\(sizeString)_v\(Self.cacheVersion)"
+    }
+
+    private func removeObsoleteDiskThumbnails() {
+        let currentVersionSuffix = "_v\(Self.cacheVersion)"
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: cacheDirectory,
+            includingPropertiesForKeys: nil
+        ) else { return }
+
+        for file in contents {
+            let key = file.deletingPathExtension().lastPathComponent
+            if !key.hasSuffix(currentVersionSuffix) {
+                try? fileManager.removeItem(at: file)
+            }
+        }
     }
 
     private func cacheCost(for image: NSImage) -> Int {
