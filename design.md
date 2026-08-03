@@ -175,6 +175,7 @@ Disable animations while the grid size slider is dragging. Prefer `MicroficheMot
 2. **Name the target** — “Remove Folder”, “Forget Drive”, “Move to Trash” — not vague “Delete” when the object matters.
 3. **Short toolbar help** — Verb phrases: “Thumbnail Size”, “Back to Library”, “Show Info”.
 4. **Status is factual** — “Offline”, “Connected”, “3 linked folders • 1 offline”.
+5. **Onboarding stays concrete** — One benefit per step; say what the user does and what they get. Prefer product terms already in the UI (Contact Sheets, Finder labels/tags/comments, Link a Folder) over marketing verbs.
 
 ---
 
@@ -215,6 +216,7 @@ Disable animations while the grid size slider is dragging. Prefer `MicroficheMot
 - Full-window dimmed overlay + `LiquidGlassPanel` (same modal pattern as quick preview).
 - Shows once until completed/skipped when **Settings → Onboarding → Show welcome onboarding** is on.
 - Testing: toggle the setting off to suppress; use **Replay Onboarding** or **Help → Replay Welcome Onboarding** to walk through again.
+- **Copy:** Four steps, one job each — in-place library, linked folders/drives, Contact Sheets, Finder metadata. Titles are short and direct; body copy is one instructional sentence plus the payoff. Final CTAs: **Link a Folder** / **Browse Library**.
 
 ### Archive folder
 - **Files:** `Services/ArchiveFolderStore.swift`, `Services/FileArchiver.swift`, `SettingsView.swift`
