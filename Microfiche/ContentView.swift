@@ -106,7 +106,6 @@ struct ContentView: View {
 
     @State private var selection: Selection?
     @State private var imageFiles: [ImageFile] = []
-    @State private var libraryLoadGeneration = UUID()
     @State private var viewMode: ViewMode = .grid
     @State private var gridThumbnailSize: CGFloat = GridThumbnailSizing.defaultValue
     @State private var liveGridThumbnailSize: CGFloat?
@@ -133,9 +132,8 @@ struct ContentView: View {
     @StateObject private var contactSheetStorage = ContactSheetStorage.shared
     @StateObject private var userPreferences = UserPreferences.shared
     @StateObject private var archiveFolderStore = ArchiveFolderStore.shared
+    @StateObject private var libraryIndex = LibraryIndexStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    let supportedExtensions = ["jpg", "jpeg", "png", "pdf", "svg", "gif", "tiff"]
 
     private var displayedGridThumbnailSize: CGFloat {
         liveGridThumbnailSize ?? gridThumbnailSize
@@ -147,14 +145,12 @@ struct ContentView: View {
                 .onChange(of: selection) { _, newValue in
                     switch newValue {
                     case .all:
-                        loadImages(from: libraryStorage.availableFolderURLs)
+                        refreshIndexedImages()
                         lastSelectedLibraryFolderID = ""
                     case .folder(let id):
-                        let urls = libraryStorage.folder(id: id)?.resolvedURL.map { [$0] } ?? []
-                        loadImages(from: urls)
+                        refreshIndexedImages()
                         lastSelectedLibraryFolderID = id.uuidString
                     case .contactSheet(let id):
-                        libraryLoadGeneration = UUID()
                         imageFiles = contactSheetStorage.getImages(for: id)
                     case .none:
                         imageFiles = []
@@ -165,7 +161,14 @@ struct ContentView: View {
                     libraryPath.removeAll()
                 }
                 .onChange(of: libraryStorage.linkedFolders) {
+                    libraryIndex.configure(folders: libraryStorage.linkedFolders)
                     reloadSelectedLibraryLocation()
+                    Task {
+                        await libraryIndex.reconcileAll()
+                    }
+                }
+                .onChange(of: libraryIndex.revision) {
+                    refreshIndexedImages()
                 }
                 .onChange(of: libraryPath) { oldPath, newPath in
                     if LibraryNavigation.detailImageID(in: oldPath) != nil,
@@ -302,8 +305,10 @@ struct ContentView: View {
         .animation(MicroficheMotion.snap, value: isQuickPreviewPresented)
         .animation(MicroficheMotion.transition, value: userPreferences.isPresentingOnboarding)
         .task {
+            libraryIndex.configure(folders: libraryStorage.linkedFolders)
             restoreLibrarySelection()
             userPreferences.evaluateLaunchPresentation()
+            await libraryIndex.reconcileAll()
         }
         .sheet(item: $contactSheetExportPresentation) { presentation in
             ContactSheetExportView(
@@ -579,6 +584,7 @@ struct ContentView: View {
     private func removeFolder(_ id: UUID) {
         if let index = libraryStorage.linkedFolders.firstIndex(where: { $0.id == id }) {
             let wasSelected = (selection == .folder(id))
+            libraryIndex.removeFolder(id: id)
             libraryStorage.removeFolder(id: id)
 
             if wasSelected {
@@ -605,11 +611,8 @@ struct ContentView: View {
 
     private func reloadSelectedLibraryLocation() {
         switch selection {
-        case .all:
-            loadImages(from: libraryStorage.availableFolderURLs)
-        case .folder(let id):
-            let urls = libraryStorage.folder(id: id)?.resolvedURL.map { [$0] } ?? []
-            loadImages(from: urls)
+        case .all, .folder:
+            refreshIndexedImages()
         case .contactSheet, .none:
             break
         }
@@ -670,7 +673,7 @@ struct ContentView: View {
 
     private func handleDropToContactSheet(sheetID: UUID, urls: [URL]) {
         let supportedURLs = urls.filter {
-            supportedExtensions.contains($0.pathExtension.lowercased())
+            SupportedImageExtensions.contains($0)
         }
         _ = contactSheetStorage.addImages(from: supportedURLs, to: sheetID)
 
@@ -680,7 +683,7 @@ struct ContentView: View {
     }
 
     private func handleAddToContactSheet(sheetID: UUID, imageURL: URL) {
-        guard supportedExtensions.contains(imageURL.pathExtension.lowercased()) else { return }
+        guard SupportedImageExtensions.contains(imageURL) else { return }
         _ = contactSheetStorage.addImage(from: imageURL, to: sheetID)
 
         if selection == .contactSheet(sheetID) {
@@ -690,31 +693,30 @@ struct ContentView: View {
 
     // MARK: - Image Loading
 
-    private func loadImages(from folderURLs: [URL]) {
-        let generation = UUID()
-        libraryLoadGeneration = generation
-        imageFiles = []
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            var newImageFiles: [ImageFile] = []
-            let fileManager = FileManager.default
-
-            for folderURL in folderURLs {
-                if let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
-                    for case let fileURL as URL in enumerator {
-                        if supportedExtensions.contains(fileURL.pathExtension.lowercased()) {
-                            newImageFiles.append(ImageFile(url: fileURL))
-                        }
-                    }
-                }
+    private func refreshIndexedImages() {
+        let folderIDs: [UUID]
+        switch selection {
+        case .all:
+            folderIDs = libraryStorage.linkedFolders.compactMap {
+                $0.isAvailable ? $0.id : nil
             }
+        case .folder(let id):
+            folderIDs = libraryStorage.folder(id: id)?.isAvailable == true ? [id] : []
+        case .contactSheet, .none:
+            return
+        }
 
-            newImageFiles.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let nextFiles = libraryIndex.files(for: folderIDs)
+        let nextIDs = Set(nextFiles.map(\.id))
+        imageFiles = nextFiles
+        selectedImageFileIDs.formIntersection(nextIDs)
 
-            DispatchQueue.main.async {
-                guard self.libraryLoadGeneration == generation else { return }
-                self.imageFiles = newImageFiles
-            }
+        if let focusedImageFileID, !nextIDs.contains(focusedImageFileID) {
+            self.focusedImageFileID = nil
+            isQuickPreviewPresented = false
+        }
+        if let detailImageID, !nextIDs.contains(detailImageID) {
+            libraryPath.removeAll()
         }
     }
 
@@ -818,6 +820,7 @@ struct ContentView: View {
             do {
                 let destination = try FileArchiver.move(file.url, intoArchive: archiveURL)
                 ImageMetadataStore.shared.move(from: file.url, to: destination)
+                libraryIndex.move(from: file.url, to: destination)
                 ImageCache.shared.clearCacheForFile(at: file.url)
                 PreviewImageCache.shared.clearCacheForFile(at: file.url)
                 imageFiles.removeAll { $0.id == file.id }
@@ -881,6 +884,7 @@ struct ContentView: View {
             }
         }
         ImageMetadataStore.shared.remove(for: trashedURLs)
+        libraryIndex.remove(urls: trashedURLs)
         for url in trashedURLs {
             ImageCache.shared.clearCacheForFile(at: url)
             PreviewImageCache.shared.clearCacheForFile(at: url)
@@ -1036,6 +1040,7 @@ struct ContentView: View {
         do {
             try FileManager.default.moveItem(at: oldURL, to: newURL)
             ImageMetadataStore.shared.move(from: oldURL, to: newURL)
+            libraryIndex.move(from: oldURL, to: newURL)
             ImageCache.shared.clearCacheForFile(at: oldURL)
             PreviewImageCache.shared.clearCacheForFile(at: oldURL)
 

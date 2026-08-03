@@ -267,6 +267,135 @@ final class MicroficheTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testLibraryIndexLoadsCachedEntriesBeforeReconcile() async throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-index-cache-\(UUID().uuidString)")
+        let photos = root.appendingPathComponent("Photos", isDirectory: true)
+        let persistenceURL = root.appendingPathComponent("library-index.json")
+        let imageURL = photos.appendingPathComponent("cached.jpg")
+        try fileManager.createDirectory(at: photos, withIntermediateDirectories: true)
+        try Data("image".utf8).write(to: imageURL)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let folder = makeLinkedFolder(url: photos)
+        let store = LibraryIndexStore(
+            persistenceURL: persistenceURL,
+            watchesFileSystem: false
+        )
+        store.configure(folders: [folder])
+        await store.reconcile(folderID: folder.id)
+        XCTAssertEqual(store.files(for: [folder.id]).map(\.url), [imageURL])
+
+        try fileManager.removeItem(at: imageURL)
+        let restored = LibraryIndexStore(
+            persistenceURL: persistenceURL,
+            watchesFileSystem: false
+        )
+        XCTAssertEqual(restored.files(for: [folder.id]).map(\.name), ["cached.jpg"])
+    }
+
+    @MainActor
+    func testLibraryIndexReconcileAddsRemovesAndFiltersFiles() async throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-index-reconcile-\(UUID().uuidString)")
+        let photos = root.appendingPathComponent("Photos", isDirectory: true)
+        let persistenceURL = root.appendingPathComponent("library-index.json")
+        let firstImage = photos.appendingPathComponent("one.jpg")
+        let ignoredFile = photos.appendingPathComponent("notes.txt")
+        try fileManager.createDirectory(at: photos, withIntermediateDirectories: true)
+        try Data("one".utf8).write(to: firstImage)
+        try Data("ignored".utf8).write(to: ignoredFile)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let folder = makeLinkedFolder(url: photos)
+        let store = LibraryIndexStore(
+            persistenceURL: persistenceURL,
+            watchesFileSystem: false
+        )
+        store.configure(folders: [folder])
+        await store.reconcile(folderID: folder.id)
+        XCTAssertEqual(store.files(for: [folder.id]).map(\.name), ["one.jpg"])
+
+        try fileManager.removeItem(at: firstImage)
+        let secondImage = photos.appendingPathComponent("two.png")
+        try Data("two".utf8).write(to: secondImage)
+        await store.reconcile(folderID: folder.id)
+
+        XCTAssertEqual(store.files(for: [folder.id]).map(\.name), ["two.png"])
+    }
+
+    func testLibraryIndexScannerAppliesChangedSubtreeIncrementally() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-index-delta-\(UUID().uuidString)")
+        let nested = root.appendingPathComponent("Nested", isDirectory: true)
+        let oldImage = nested.appendingPathComponent("old.jpg")
+        try fileManager.createDirectory(at: nested, withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: oldImage)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let initial = LibraryIndexScanner.scan(root: root)
+        XCTAssertEqual(initial.map(\.path), [oldImage.path])
+
+        try fileManager.removeItem(at: oldImage)
+        let newImage = nested.appendingPathComponent("new.png")
+        try Data("new".utf8).write(to: newImage)
+        let updated = LibraryIndexScanner.applying(
+            changedPaths: [nested.path],
+            to: initial,
+            under: root
+        )
+
+        XCTAssertEqual(updated.map(\.path), [newImage.path])
+    }
+
+    @MainActor
+    func testLibraryIndexLocalRenameUpdatesAndPersistsEntry() async throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-index-rename-\(UUID().uuidString)")
+        let photos = root.appendingPathComponent("Photos", isDirectory: true)
+        let persistenceURL = root.appendingPathComponent("library-index.json")
+        let oldURL = photos.appendingPathComponent("before.jpg")
+        let newURL = photos.appendingPathComponent("after.jpg")
+        try fileManager.createDirectory(at: photos, withIntermediateDirectories: true)
+        try Data("image".utf8).write(to: oldURL)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let folder = makeLinkedFolder(url: photos)
+        let store = LibraryIndexStore(
+            persistenceURL: persistenceURL,
+            watchesFileSystem: false
+        )
+        store.configure(folders: [folder])
+        await store.reconcile(folderID: folder.id)
+        try fileManager.moveItem(at: oldURL, to: newURL)
+        store.move(from: oldURL, to: newURL)
+
+        XCTAssertEqual(store.files(for: [folder.id]).map(\.url), [newURL])
+        let restored = LibraryIndexStore(
+            persistenceURL: persistenceURL,
+            watchesFileSystem: false
+        )
+        XCTAssertEqual(restored.files(for: [folder.id]).map(\.url), [newURL])
+    }
+
+    private func makeLinkedFolder(url: URL) -> LinkedLibraryFolder {
+        LinkedLibraryFolder(
+            id: UUID(),
+            name: url.lastPathComponent,
+            originalPath: url.path,
+            volumeIdentifier: nil,
+            volumeName: nil,
+            isExternal: false,
+            addedAt: .now,
+            resolvedURL: url
+        )
+    }
+
     func testRememberedExternalVolumePersistsConnectionMetadata() throws {
         let volume = RememberedExternalVolume(
             id: "uuid:test-drive",
