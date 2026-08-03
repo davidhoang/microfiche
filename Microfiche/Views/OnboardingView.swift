@@ -36,7 +36,7 @@ struct OnboardingView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
-                        .help("Skip welcome onboarding")
+                        .help("Skip Welcome Onboarding")
                     }
                     .padding(.horizontal, 28)
                     .padding(.top, 20)
@@ -86,7 +86,7 @@ struct OnboardingView: View {
                                 .buttonStyle(.borderedProminent)
                                 .keyboardShortcut(.defaultAction)
 
-                                Button("Start Browsing") {
+                                Button("Browse Library") {
                                     finish()
                                 }
                                 .buttonStyle(.bordered)
@@ -130,25 +130,25 @@ struct OnboardingStep: Identifiable, Equatable {
             id: "welcome",
             symbolName: "photo.on.rectangle.angled",
             title: "Your library, left in place",
-            message: "Microfiche browses photos where they already live. No import, no copies — just a durable view of your folders and drives."
+            message: "Microfiche browses photos where they already live. No import, no copies — just a fast view of your folders and drives."
         ),
         OnboardingStep(
             id: "folders",
             symbolName: "folder.badge.plus",
             title: "Link folders and drives",
-            message: "Add folders from your Mac or external volumes. Microfiche remembers them and reconnects when a drive comes back online."
+            message: "Add folders from your Mac, iCloud Drive, or external volumes. Microfiche remembers them and reconnects when a drive comes back online."
         ),
         OnboardingStep(
             id: "contact-sheets",
             symbolName: "rectangle.stack",
-            title: "Curate with Contact Sheets",
-            message: "Gather selects into Contact Sheets that stay available even if the original drive is offline."
+            title: "Keep selects on Contact Sheets",
+            message: "Gather images into Contact Sheets from any linked folder. Sheets stay in your library even when a drive is offline."
         ),
         OnboardingStep(
             id: "metadata",
             symbolName: "tag",
-            title: "Labels, tags, and notes that stick",
-            message: "Edit Finder labels, tags, and comments right from the inspector — written where Finder and other apps can see them."
+            title: "Labels, tags, and comments",
+            message: "Edit Finder labels, tags, and comments in the inspector. Changes write to the file so Finder and other apps can see them."
         )
     ]
 }

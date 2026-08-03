@@ -1052,6 +1052,16 @@ final class MicroficheTests: XCTestCase {
         let steps = OnboardingStep.all
         XCTAssertEqual(steps.count, 4)
         XCTAssertEqual(steps.map(\.id), ["welcome", "folders", "contact-sheets", "metadata"])
+        XCTAssertEqual(steps.map(\.title), [
+            "Your library, left in place",
+            "Link folders and drives",
+            "Keep selects on Contact Sheets",
+            "Labels, tags, and comments"
+        ])
+        XCTAssertTrue(steps[0].message.contains("No import, no copies"))
+        XCTAssertTrue(steps[1].message.contains("iCloud Drive"))
+        XCTAssertTrue(steps[2].message.contains("offline"))
+        XCTAssertTrue(steps[3].message.contains("Finder"))
         XCTAssertTrue(steps.allSatisfy { !$0.title.isEmpty && !$0.message.isEmpty && !$0.symbolName.isEmpty })
     }
 
