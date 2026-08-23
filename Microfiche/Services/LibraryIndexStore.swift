@@ -149,6 +149,9 @@ final class LibraryIndexStore: ObservableObject {
     private var mutationVersions: [UUID: UInt64] = [:]
     private var fileSystemChangeTasks: [UUID: Task<Void, Never>] = [:]
     private var fileSystemChangeGenerations: [UUID: UUID] = [:]
+    #if DEBUG
+    var testWillScan: (() async -> Void)?
+    #endif
 
     init(
         persistenceURL customPersistenceURL: URL? = nil,
@@ -232,6 +235,12 @@ final class LibraryIndexStore: ObservableObject {
         let generation = UUID()
         let mutationVersion = mutationVersions[folderID, default: 0]
         reconcileGenerations[folderID] = generation
+
+        #if DEBUG
+        if let testWillScan {
+            await testWillScan()
+        }
+        #endif
 
         let entries = await Task.detached(priority: .userInitiated) {
             LibraryIndexScanner.scan(root: root)
