@@ -23,6 +23,12 @@ struct LinkedLibraryFolder: Identifiable, Equatable {
             fallback: name
         )
     }
+
+    var isICloudDrive: Bool {
+        LibraryLocationPresentation.isICloudDrivePath(
+            resolvedURL ?? URL(fileURLWithPath: originalPath)
+        )
+    }
 }
 
 struct RememberedExternalVolume: Identifiable, Codable, Equatable {
@@ -66,5 +72,9 @@ enum LibraryLocationPresentation {
 
         let relativeComponents = pathComponents.dropFirst(iCloudDriveIndex + 1)
         return relativeComponents.last ?? "iCloud Drive"
+    }
+
+    static func isICloudDrivePath(_ url: URL) -> Bool {
+        url.standardizedFileURL.pathComponents.contains(iCloudDriveDirectoryName)
     }
 }

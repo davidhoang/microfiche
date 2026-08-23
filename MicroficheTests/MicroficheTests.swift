@@ -434,6 +434,37 @@ final class MicroficheTests: XCTestCase {
         )
     }
 
+    func testLibraryFilteringMatchesNamesTypesAndMetadata() {
+        let file = ImageFile(url: URL(fileURLWithPath: "/Photos/sunset.JPG"))
+        let metadata = ImageMetadata(
+            tags: ["Travel"],
+            labels: ["Favorite"],
+            comments: "Golden hour",
+            whereFrom: "Seattle"
+        )
+
+        XCTAssertTrue(LibraryFiltering.matches(
+            file: file, metadata: metadata, query: "golden", fileType: "jpg", tag: "travel"
+        ))
+        XCTAssertTrue(LibraryFiltering.matches(
+            file: file, metadata: metadata, query: "Photos", fileType: "", tag: ""
+        ))
+        XCTAssertFalse(LibraryFiltering.matches(
+            file: file, metadata: metadata, query: "golden", fileType: "png", tag: "travel"
+        ))
+        XCTAssertFalse(LibraryFiltering.matches(
+            file: file, metadata: metadata, query: "desert", fileType: "jpg", tag: ""
+        ))
+    }
+
+    func testLibraryLocationPresentationRecognizesICloudDrivePaths() {
+        let url = URL(fileURLWithPath: "/Users/test/Library/Mobile Documents/com~apple~CloudDocs/Photos")
+        XCTAssertTrue(LibraryLocationPresentation.isICloudDrivePath(url))
+        XCTAssertFalse(LibraryLocationPresentation.isICloudDrivePath(
+            URL(fileURLWithPath: "/Users/test/Pictures")
+        ))
+    }
+
     func testICloudDriveRootUsesFriendlyDisplayName() {
         let folder = LinkedLibraryFolder(
             id: UUID(),

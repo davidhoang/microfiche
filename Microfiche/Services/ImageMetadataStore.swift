@@ -102,6 +102,19 @@ final class ImageMetadataStore {
         }
     }
 
+    func allTags(for urls: [URL]) -> [String] {
+        var seen = Set<String>()
+        var tags: [String] = []
+        for url in urls {
+            for tag in metadata(for: url).tags {
+                guard !seen.contains(tag) else { continue }
+                seen.insert(tag)
+                tags.append(tag)
+            }
+        }
+        return tags.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
     // MARK: - Persistence
 
     private func load() {
