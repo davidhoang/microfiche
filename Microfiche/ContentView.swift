@@ -101,8 +101,9 @@ struct ContentView: View {
         static let minimumWidth: CGFloat = 240
         static let idealWidth: CGFloat = 280
         static let maximumWidth: CGFloat = 360
-        static let autoCollapseWidth: CGFloat = 220
     }
+
+    @Environment(\.toggleSidebar) private var toggleSidebar
 
     @State private var selection: Selection?
     @State private var imageFiles: [ImageFile] = []
@@ -326,7 +327,6 @@ struct ContentView: View {
                     externalVolumes: libraryStorage.rememberedExternalVolumes,
                     contactSheets: contactSheetStorage.contactSheets,
                     selection: selection,
-                    onWidthChange: handleSidebarWidthChange,
                     onLinkFolder: linkFolder,
                     onSelect: { newSelection in
                         selection = newSelection
@@ -406,6 +406,16 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var libraryToolbar: some ToolbarContent {
         if !isImageDetailPresented {
+            ToolbarItem {
+                Button(action: toggleSidebar) {
+                    Image(systemName: "sidebar.left")
+                }
+                .help("Toggle Sidebar")
+                .accessibilityLabel("Toggle sidebar")
+                .accessibilityIdentifier("sidebar.toggle")
+            }
+            .hideSharedBackgroundIfAvailable()
+
             ToolbarItem(placement: .principal) {
                 if viewMode == .grid {
                     HStack(spacing: 6) {
@@ -446,6 +456,8 @@ struct ContentView: View {
                 }
                 .disabled(focusedImageFile == nil)
                 .help(isMetadataInspectorPresented ? "Hide Info" : "Show Info")
+                .accessibilityLabel(isMetadataInspectorPresented ? "Hide inspector" : "Show inspector")
+                .accessibilityIdentifier("inspector.toggle")
             }
             .hideSharedBackgroundIfAvailable()
 
@@ -615,16 +627,6 @@ struct ContentView: View {
             refreshIndexedImages()
         case .contactSheet, .none:
             break
-        }
-    }
-
-    private func handleSidebarWidthChange(_ width: CGFloat) {
-        guard !isLibrarySidebarCollapsed else { return }
-
-        if width < SidebarLayout.autoCollapseWidth {
-            withAnimation(MicroficheMotion.transition) {
-                isLibrarySidebarCollapsed = true
-            }
         }
     }
 
