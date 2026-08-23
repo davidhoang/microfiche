@@ -1114,6 +1114,134 @@ final class MicroficheTests: XCTestCase {
         XCTAssertTrue(cleared.comment.isEmpty)
     }
 
+    func testBatchMetadataSummaryDetectsSharedMixedAndEmptyValues() {
+        let empty = ResolvedImageMetadata(
+            label: .none, tags: [], comments: "", whereFrom: ""
+        )
+        let red = ResolvedImageMetadata(
+            label: .red,
+            tags: ["Travel", "Keep"],
+            comments: "Golden hour",
+            whereFrom: "Seattle"
+        )
+        let blue = ResolvedImageMetadata(
+            label: .blue,
+            tags: ["Travel"],
+            comments: "Golden hour",
+            whereFrom: "Portland"
+        )
+
+        let one = BatchMetadataAggregation.summarize([red])
+        XCTAssertEqual(one.fileCount, 1)
+        XCTAssertEqual(one.label, .shared(.red))
+        XCTAssertEqual(one.sharedTags, ["Keep", "Travel"])
+        XCTAssertTrue(one.mixedTags.isEmpty)
+        XCTAssertEqual(one.comments, .shared("Golden hour"))
+        XCTAssertEqual(one.whereFrom, .shared("Seattle"))
+
+        let mixed = BatchMetadataAggregation.summarize([red, blue])
+        XCTAssertEqual(mixed.label, .mixed)
+        XCTAssertEqual(mixed.sharedTags, ["Travel"])
+        XCTAssertEqual(mixed.mixedTags, ["Keep"])
+        XCTAssertEqual(mixed.comments, .shared("Golden hour"))
+        XCTAssertEqual(mixed.whereFrom, .mixed)
+
+        let empties = BatchMetadataAggregation.summarize([empty, empty])
+        XCTAssertEqual(empties.label, .empty)
+        XCTAssertTrue(empties.sharedTags.isEmpty)
+        XCTAssertEqual(empties.comments, .empty)
+        XCTAssertEqual(empties.whereFrom, .empty)
+    }
+
+    @MainActor
+    func testBatchMetadataWriterCoversSingleMultipleRepeatedPartialFailureAndCancellation() async throws {
+        enum WriteError: Error { case boom }
+
+        let first = URL(fileURLWithPath: "/tmp/batch-a.jpg")
+        let second = URL(fileURLWithPath: "/tmp/batch-b.jpg")
+        let missing = URL(fileURLWithPath: "/tmp/batch-missing.jpg")
+        let firstPath = ImageIdentity.normalizedPath(for: first)
+        let secondPath = ImageIdentity.normalizedPath(for: second)
+
+        var records: [String: ResolvedImageMetadata] = [
+            firstPath: ResolvedImageMetadata(
+                label: .none, tags: ["Keep"], comments: "One", whereFrom: "A"
+            ),
+            secondPath: ResolvedImageMetadata(
+                label: .red, tags: ["Travel"], comments: "Two", whereFrom: "B"
+            )
+        ]
+        var failing = Set<String>()
+        var missingPaths = Set<String>()
+        var writer = BatchMetadataWriter(
+            loadResolved: { url in
+                records[ImageIdentity.normalizedPath(for: url)]
+                    ?? ResolvedImageMetadata(
+                        label: .none, tags: [], comments: "", whereFrom: ""
+                    )
+            },
+            save: { resolved, url in
+                let path = ImageIdentity.normalizedPath(for: url)
+                if failing.contains(path) {
+                    throw WriteError.boom
+                }
+                records[path] = resolved
+            },
+            fileExists: { url in
+                !missingPaths.contains(ImageIdentity.normalizedPath(for: url))
+            }
+        )
+
+        let single = await writer.apply(.setLabel(.blue), to: [first])
+        XCTAssertEqual(single.succeededPaths, [firstPath])
+        XCTAssertEqual(records[firstPath]?.label, .blue)
+
+        let added = await writer.apply(.addTag("Travel"), to: [first, second])
+        XCTAssertEqual(Set(added.succeededPaths), [firstPath, secondPath])
+        XCTAssertEqual(records[firstPath]?.tags.sorted(), ["Keep", "Travel"])
+        XCTAssertEqual(records[secondPath]?.tags, ["Travel"])
+
+        let repeated = await writer.apply(.addTag("Travel"), to: [first, second])
+        XCTAssertEqual(Set(repeated.succeededPaths), [firstPath, secondPath])
+        XCTAssertEqual(records[firstPath]?.tags.sorted(), ["Keep", "Travel"])
+
+        let removed = await writer.apply(.removeTag("Keep"), to: [first, second])
+        XCTAssertEqual(Set(removed.succeededPaths), [firstPath, secondPath])
+        XCTAssertEqual(records[firstPath]?.tags, ["Travel"])
+        XCTAssertEqual(records[secondPath]?.tags, ["Travel"])
+
+        let replaced = await writer.apply(.replaceComments("Shared"), to: [first, second])
+        XCTAssertEqual(replaced.succeededPaths.count, 2)
+        XCTAssertEqual(records[firstPath]?.comments, "Shared")
+        XCTAssertEqual(records[secondPath]?.comments, "Shared")
+        XCTAssertEqual(records[firstPath]?.whereFrom, "A")
+
+        failing = [secondPath]
+        let partial = await writer.apply(.replaceWhereFrom("Studio"), to: [first, second])
+        XCTAssertEqual(partial.succeededPaths, [firstPath])
+        XCTAssertEqual(partial.failures.map(\.path), [secondPath])
+        XCTAssertEqual(records[firstPath]?.whereFrom, "Studio")
+        XCTAssertEqual(records[secondPath]?.whereFrom, "B")
+        XCTAssertNotNil(partial.errorMessage)
+
+        missingPaths = [ImageIdentity.normalizedPath(for: missing)]
+        let skipped = await writer.apply(.setLabel(.green), to: [first, missing])
+        XCTAssertEqual(skipped.succeededPaths, [firstPath])
+        XCTAssertEqual(skipped.skippedMissingPaths, [ImageIdentity.normalizedPath(for: missing)])
+        XCTAssertEqual(records[firstPath]?.label, .green)
+
+        var cancelRequested = false
+        writer.beforeSave = { _ in
+            cancelRequested = true
+        }
+        writer.isCancelled = { cancelRequested }
+        let cancelled = await writer.apply(.setLabel(.orange), to: [first, second])
+        XCTAssertTrue(cancelled.wasCancelled)
+        XCTAssertTrue(cancelled.succeededPaths.isEmpty)
+        XCTAssertEqual(records[firstPath]?.label, .green)
+        XCTAssertEqual(records[secondPath]?.label, .red)
+    }
+
     func testPhotoMetadataReaderReadsPNGDimensionsAndReportsMissingFiles() throws {
         let pngData = Data(base64Encoded:
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="

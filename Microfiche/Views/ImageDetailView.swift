@@ -22,7 +22,7 @@ struct ImageDetailView: View {
     var body: some View {
         extendedImageCanvas
             .inspector(isPresented: $isMetadataPresented) {
-                ImageMetadataInspectorView(file: file)
+                ImageMetadataInspectorView(files: [file])
                     .id(file.id)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
@@ -127,95 +127,179 @@ struct ImageDetailView: View {
 // MARK: - Metadata Inspector
 
 struct ImageMetadataInspectorView: View {
-    let file: ImageFile
+    let files: [ImageFile]
 
-    @State private var finderLabel: FinderLabel = .none
+    @State private var summary = BatchMetadataSummary(
+        fileCount: 0,
+        label: .empty,
+        sharedTags: [],
+        mixedTags: [],
+        comments: .empty,
+        whereFrom: .empty
+    )
     @State private var tags: [String] = []
+    @State private var mixedTags: [String] = []
     @State private var comments = ""
     @State private var whereFrom = ""
+    @State private var commentsDraft = ""
+    @State private var whereFromDraft = ""
     @State private var isEditingTags = false
     @State private var isEditingComments = false
     @State private var isEditingWhereFrom = false
     @State private var newTag = ""
     @State private var saveError: String?
+    @State private var isSaving = false
+    @State private var writeTask: Task<Void, Never>?
+    @State private var writeGeneration = UUID()
     @State private var technicalMetadata = PhotoTechnicalMetadataLoadState()
     @State private var technicalMetadataReloadID = UUID()
+
+    private var file: ImageFile? { files.count == 1 ? files.first : nil }
+    private var isBatch: Bool { files.count > 1 }
+    private var selectionSignature: [UUID] { files.map(\.id) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 headerSection
 
-                FinderLabelPicker(selection: finderLabel) { label in
-                    applyFinderLabel(label)
+                FinderLabelPicker(selection: selectedLabel) { label in
+                    apply(.setLabel(label))
                 }
+                .disabled(isSaving)
 
                 EditableChipSection(
                     title: "Tags",
-                    subtitle: "Finder tags",
+                    subtitle: isBatch ? "Finder tags across \(files.count) images" : "Finder tags",
                     itemName: "tag",
                     items: $tags,
+                    mixedItems: mixedTags,
                     isEditing: $isEditingTags,
                     newItem: $newTag,
                     chipColor: Color.accentColor.opacity(0.16),
-                    onSave: saveMetadata
+                    onSave: {
+                        // Single-file chip edits write immediately via add/remove hooks.
+                    },
+                    onAdd: { tag in
+                        apply(.addTag(tag))
+                    },
+                    onRemove: { tag in
+                        apply(.removeTag(tag))
+                    }
                 )
+                .disabled(isSaving)
 
-                editableTextSection(
+                replaceableTextSection(
                     title: "Comments",
                     subtitle: "Finder comments",
                     placeholder: "No comments",
-                    text: $comments,
+                    field: summary.comments,
+                    displayed: comments,
+                    draft: $commentsDraft,
                     isEditing: $isEditingComments,
-                    isMultiline: true
+                    isMultiline: true,
+                    replaceIdentifier: "inspector.replace-comments",
+                    onReplace: { apply(.replaceComments($0)) }
                 )
 
-                editableTextSection(
+                replaceableTextSection(
                     title: "Where From",
                     subtitle: "Stored in Microfiche",
                     placeholder: "No source specified",
-                    text: $whereFrom,
+                    field: summary.whereFrom,
+                    displayed: whereFrom,
+                    draft: $whereFromDraft,
                     isEditing: $isEditingWhereFrom,
-                    isMultiline: false
+                    isMultiline: false,
+                    replaceIdentifier: "inspector.replace-where-from",
+                    onReplace: { apply(.replaceWhereFrom($0)) }
                 )
 
-                fileInfoSection
+                if isSaving {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Updating \(files.count) images…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Cancel") {
+                            writeTask?.cancel()
+                        }
+                        .controlSize(.small)
+                        .accessibilityIdentifier("inspector.cancel-write")
+                    }
+                }
 
-                technicalMetadataSection
+                if !isBatch {
+                    fileInfoSection
+                    technicalMetadataSection
+                }
 
                 if let saveError {
                     Text(saveError)
                         .font(.caption)
                         .foregroundStyle(.red)
                         .textSelection(.enabled)
+                        .accessibilityIdentifier("inspector.save-error")
                 }
             }
             .padding(20)
         }
-        .task(id: file.id) {
+        .task(id: selectionSignature) {
             loadMetadata()
         }
         .task(id: technicalMetadataReloadID) {
             await loadTechnicalMetadata()
         }
         .onDisappear {
-            saveMetadata()
+            writeTask?.cancel()
+            guard !isBatch else { return }
+            let urls = files.map(\.url)
+            let commentsToSave = isEditingComments ? commentsDraft : comments
+            let sourceToSave = isEditingWhereFrom ? whereFromDraft : whereFrom
+            Task { @MainActor in
+                let writer = BatchMetadataWriter.live()
+                _ = await writer.apply(.replaceComments(commentsToSave), to: urls)
+                _ = await writer.apply(.replaceWhereFrom(sourceToSave), to: urls)
+            }
         }
         .microficheInspectorContentChrome()
     }
 
+    private var selectedLabel: FinderLabel? {
+        switch summary.label {
+        case .empty:
+            return .none
+        case .shared(let label):
+            return label
+        case .mixed:
+            return nil
+        }
+    }
+
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(file.name)
-                .font(.system(size: 15, weight: .semibold))
-                .lineLimit(2)
-                .textSelection(.enabled)
+            if let file {
+                Text(file.name)
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(2)
+                    .textSelection(.enabled)
 
-            Text(file.url.deletingLastPathComponent().path)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .textSelection(.enabled)
+                Text(file.url.deletingLastPathComponent().path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+            } else {
+                Text("\(files.count) images selected")
+                    .font(.system(size: 15, weight: .semibold))
+                    .accessibilityIdentifier("inspector.selection-summary")
+
+                Text("Shared values apply to every selected image. Mixed tags can be removed from the images that have them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -224,17 +308,19 @@ struct ImageMetadataInspectorView: View {
             Text("File Info")
                 .font(.headline)
 
-            VStack(alignment: .leading, spacing: 6) {
-                InfoRow(label: "Type", value: file.url.pathExtension.uppercased())
+            if let file {
+                VStack(alignment: .leading, spacing: 6) {
+                    InfoRow(label: "Type", value: file.url.pathExtension.uppercased())
 
-                if let fileSize = file.url.formattedFileSize() {
-                    InfoRow(label: "Size", value: fileSize)
-                }
-                if let creationDate = file.url.formattedCreationDate() {
-                    InfoRow(label: "Created", value: creationDate)
-                }
-                if let modificationDate = file.url.formattedModificationDate() {
-                    InfoRow(label: "Modified", value: modificationDate)
+                    if let fileSize = file.url.formattedFileSize() {
+                        InfoRow(label: "Size", value: fileSize)
+                    }
+                    if let creationDate = file.url.formattedCreationDate() {
+                        InfoRow(label: "Created", value: creationDate)
+                    }
+                    if let modificationDate = file.url.formattedModificationDate() {
+                        InfoRow(label: "Modified", value: modificationDate)
+                    }
                 }
             }
         }
@@ -284,13 +370,17 @@ struct ImageMetadataInspectorView: View {
     }
 
     @ViewBuilder
-    private func editableTextSection(
+    private func replaceableTextSection(
         title: String,
         subtitle: String? = nil,
         placeholder: String,
-        text: Binding<String>,
+        field: BatchFieldValue<String>,
+        displayed: String,
+        draft: Binding<String>,
         isEditing: Binding<Bool>,
-        isMultiline: Bool
+        isMultiline: Bool,
+        replaceIdentifier: String,
+        onReplace: @escaping (String) -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
@@ -305,62 +395,125 @@ struct ImageMetadataInspectorView: View {
                 }
                 Spacer()
                 Button {
-                    isEditing.wrappedValue.toggle()
-                    if !isEditing.wrappedValue { saveMetadata() }
+                    if isEditing.wrappedValue {
+                        onReplace(draft.wrappedValue)
+                        isEditing.wrappedValue = false
+                    } else {
+                        draft.wrappedValue = displayed
+                        isEditing.wrappedValue = true
+                    }
                 } label: {
-                    Image(systemName: isEditing.wrappedValue ? "checkmark" : "pencil")
+                    Image(systemName: isEditing.wrappedValue ? "checkmark" : (isBatch ? "square.and.pencil" : "pencil"))
                 }
                 .buttonStyle(.borderless)
-                .help(isEditing.wrappedValue ? "Done" : "Edit \(title)")
+                .disabled(isSaving)
+                .help(isEditing.wrappedValue ? "Replace \(title)" : "Replace \(title)")
+                .accessibilityIdentifier(replaceIdentifier)
             }
 
             if isEditing.wrappedValue {
                 if isMultiline {
-                    TextEditor(text: text)
+                    TextEditor(text: draft)
                         .frame(minHeight: 88)
                         .overlay {
                             RoundedRectangle(cornerRadius: 6)
                                 .strokeBorder(Color(NSColor.separatorColor))
                         }
                 } else {
-                    TextField("Enter source", text: text)
+                    TextField("Enter source", text: draft)
                         .textFieldStyle(.roundedBorder)
-                        .onSubmit { saveMetadata() }
+                        .onSubmit {
+                            onReplace(draft.wrappedValue)
+                            isEditing.wrappedValue = false
+                        }
                 }
+
+                if isBatch {
+                    Text("This replaces \(title.lowercased()) on every selected image.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button("Cancel") {
+                    isEditing.wrappedValue = false
+                    draft.wrappedValue = displayed
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
             } else {
-                Text(text.wrappedValue.isEmpty ? placeholder : text.wrappedValue)
-                    .foregroundStyle(text.wrappedValue.isEmpty ? .secondary : .primary)
-                    .italic(text.wrappedValue.isEmpty)
+                Text(displayText(for: field, placeholder: placeholder))
+                    .foregroundStyle(fieldDisplayIsPlaceholder(field) ? .secondary : .primary)
+                    .italic(fieldDisplayIsPlaceholder(field))
                     .textSelection(.enabled)
             }
         }
     }
 
+    private func displayText(
+        for field: BatchFieldValue<String>,
+        placeholder: String
+    ) -> String {
+        switch field {
+        case .empty:
+            return placeholder
+        case .shared(let value):
+            return value
+        case .mixed:
+            return "Multiple values"
+        }
+    }
+
+    private func fieldDisplayIsPlaceholder(_ field: BatchFieldValue<String>) -> Bool {
+        switch field {
+        case .empty, .mixed:
+            return true
+        case .shared:
+            return false
+        }
+    }
+
     private func loadMetadata() {
+        writeTask?.cancel()
         isEditingTags = false
         isEditingComments = false
         isEditingWhereFrom = false
         newTag = ""
         saveError = nil
+        isSaving = false
 
-        let local = ImageMetadataStore.shared.metadata(for: file.url)
-        let native = NativeFileMetadataService.load(from: file.url)
+        let resolved = files.map { file in
+            BatchMetadataAggregation.resolved(
+                native: NativeFileMetadataService.load(from: file.url),
+                local: ImageMetadataStore.shared.metadata(for: file.url)
+            )
+        }
+        let next = BatchMetadataAggregation.summarize(resolved)
+        summary = next
+        tags = next.sharedTags
+        mixedTags = next.mixedTags
+        comments = {
+            if case .shared(let value) = next.comments { return value }
+            return ""
+        }()
+        whereFrom = {
+            if case .shared(let value) = next.whereFrom { return value }
+            return ""
+        }()
+        commentsDraft = comments
+        whereFromDraft = whereFrom
 
-        finderLabel = native.label
-        tags = native.tagNames.isEmpty ? local.tags : native.tagNames
-        comments = native.comment.isEmpty ? local.comments : native.comment
-        whereFrom = local.whereFrom
-
-        if native.label == .none,
-           let migrated = FinderLabel.migrating(from: local.labels) {
-            applyFinderLabel(migrated)
-        } else if !local.labels.isEmpty {
-            // Drop obsolete free-text labels once native labels own this field.
-            persistLocalMetadata()
+        if files.count == 1,
+           let file = files.first,
+           NativeFileMetadataService.load(from: file.url).label == .none,
+           let migrated = FinderLabel.migrating(
+            from: ImageMetadataStore.shared.metadata(for: file.url).labels
+           ) {
+            apply(.setLabel(migrated))
         }
     }
 
     private func loadTechnicalMetadata() async {
+        guard let file else { return }
         let requestID = technicalMetadata.beginLoading()
         let requestedURL = file.url
         let outcome = await Task.detached(priority: .utility) {
@@ -380,53 +533,29 @@ struct ImageMetadataInspectorView: View {
         }
     }
 
-    private func applyFinderLabel(_ label: FinderLabel) {
-        finderLabel = label
-        do {
-            try NativeFileMetadataService.setLabel(label, for: file.url)
-            persistLocalMetadata()
-            saveError = nil
-        } catch {
-            saveError = "Couldn’t update Finder label: \(error.localizedDescription)"
-        }
-    }
+    private func apply(_ operation: BatchMetadataOperation) {
+        let urls = files.map(\.url)
+        let generation = UUID()
+        writeGeneration = generation
+        writeTask?.cancel()
 
-    private func saveMetadata() {
-        do {
-            try NativeFileMetadataService.save(
-                NativeFileMetadata(
-                    label: finderLabel,
-                    tagNames: tags,
-                    comment: comments
-                ),
-                for: file.url
-            )
-            persistLocalMetadata()
-            saveError = nil
-        } catch {
-            // Keep a local copy even when the file system rejects native writes.
-            persistLocalMetadata()
-            saveError = "Couldn’t write Finder metadata: \(error.localizedDescription)"
+        let task = Task { @MainActor in
+            isSaving = urls.count > 1
+            let result = await BatchMetadataWriter.live().apply(operation, to: urls)
+            guard writeGeneration == generation else { return }
+            isSaving = false
+            writeTask = nil
+            loadMetadata()
+            saveError = result.errorMessage
         }
-    }
-
-    private func persistLocalMetadata() {
-        ImageMetadataStore.shared.save(
-            ImageMetadata(
-                tags: tags,
-                labels: [],
-                comments: comments,
-                whereFrom: whereFrom
-            ),
-            for: file.url
-        )
+        writeTask = task
     }
 }
 
 // MARK: - Finder Label Picker
 
 struct FinderLabelPicker: View {
-    let selection: FinderLabel
+    let selection: FinderLabel?
     let onSelect: (FinderLabel) -> Void
 
     var body: some View {
@@ -449,9 +578,20 @@ struct FinderLabelPicker: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Finder label")
 
-            Text(selection == .none ? "No label" : selection.displayName)
+            Text(labelCaption)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var labelCaption: String {
+        switch selection {
+        case nil:
+            return "Multiple labels"
+        case .some(.none):
+            return "No label"
+        case .some(let label):
+            return label.displayName
         }
     }
 
@@ -503,10 +643,13 @@ struct EditableChipSection: View {
     var subtitle: String? = nil
     let itemName: String
     @Binding var items: [String]
+    var mixedItems: [String] = []
     @Binding var isEditing: Bool
     @Binding var newItem: String
     let chipColor: Color
     let onSave: () -> Void
+    var onAdd: ((String) -> Void)? = nil
+    var onRemove: ((String) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -541,35 +684,58 @@ struct EditableChipSection: View {
                 }
             }
 
-            if items.isEmpty {
+            if items.isEmpty, mixedItems.isEmpty {
                 Text("No \(title.lowercased())")
                     .foregroundStyle(.secondary)
                     .italic()
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 88))], spacing: 8) {
                     ForEach(items, id: \.self) { item in
-                        HStack(spacing: 4) {
-                            Text(item)
-                                .lineLimit(1)
-                            Spacer(minLength: 2)
-                            if isEditing {
-                                Button {
-                                    items.removeAll { $0 == item }
-                                    onSave()
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(chipColor, in: RoundedRectangle(cornerRadius: 7))
+                        chip(item, mixed: false)
+                    }
+                    ForEach(mixedItems, id: \.self) { item in
+                        chip(item, mixed: true)
                     }
                 }
             }
         }
+    }
+
+    private func chip(_ item: String, mixed: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(item)
+                .lineLimit(1)
+            Spacer(minLength: 2)
+            if isEditing {
+                Button {
+                    items.removeAll { $0 == item }
+                    if let onRemove {
+                        onRemove(item)
+                    } else {
+                        onSave()
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove \(item)")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            (mixed ? Color.secondary.opacity(0.14) : chipColor),
+            in: RoundedRectangle(cornerRadius: 7)
+        )
+        .overlay {
+            if mixed {
+                RoundedRectangle(cornerRadius: 7)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .accessibilityLabel(mixed ? "\(item), mixed" : item)
     }
 
     private func addItem() {
@@ -577,7 +743,11 @@ struct EditableChipSection: View {
         guard !value.isEmpty, !items.contains(value) else { return }
         items.append(value)
         newItem = ""
-        onSave()
+        if let onAdd {
+            onAdd(value)
+        } else {
+            onSave()
+        }
     }
 }
 
