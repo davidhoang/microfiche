@@ -409,9 +409,9 @@ struct ContentView: View {
                 onArchive: handleArchiveRequest(for:)
             )
             .inspector(isPresented: libraryInspectorBinding) {
-                if let focusedImageFile {
-                    ImageMetadataInspectorView(file: focusedImageFile)
-                        .id(focusedImageFile.id)
+                if !selectedImageFiles.isEmpty {
+                    ImageMetadataInspectorView(files: selectedImageFiles)
+                        .id(selectedImageFiles.map(\.id))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
                 }
@@ -473,7 +473,7 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "sidebar.right")
                 }
-                .disabled(focusedImageFile == nil)
+                .disabled(selectedImageFileIDs.isEmpty)
                 .help(isMetadataInspectorPresented ? "Hide Info" : "Show Info")
                 .accessibilityLabel(isMetadataInspectorPresented ? "Hide inspector" : "Show inspector")
                 .accessibilityIdentifier("inspector.toggle")
@@ -499,6 +499,14 @@ struct ContentView: View {
                 .hideSharedBackgroundIfAvailable()
             }
         }
+    }
+
+    private var selectedImageFiles: [ImageFile] {
+        let visible = displayedImageFiles.filter { selectedImageFileIDs.contains($0.id) }
+        if !visible.isEmpty {
+            return visible
+        }
+        return imageFiles.filter { selectedImageFileIDs.contains($0.id) }
     }
 
     private var focusedImageFile: ImageFile? {
@@ -590,11 +598,11 @@ struct ContentView: View {
         Binding(
             get: {
                 !isImageDetailPresented
-                    && focusedImageFile != nil
+                    && !selectedImageFileIDs.isEmpty
                     && isMetadataInspectorPresented
             },
             set: { isPresented in
-                guard !isImageDetailPresented, focusedImageFile != nil else { return }
+                guard !isImageDetailPresented, !selectedImageFileIDs.isEmpty else { return }
                 isMetadataInspectorPresented = isPresented
             }
         )
