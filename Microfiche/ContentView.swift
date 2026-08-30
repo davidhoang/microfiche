@@ -114,7 +114,7 @@ struct ContentView: View {
     @State private var selectedImageFileIDs: Set<UUID> = []
     @State private var focusedImageFileID: UUID?
     @State private var showDeleteAlert: Bool = false
-    @State private var dontAskAgain: Bool = UserDefaults.standard.bool(forKey: "dontAskDeleteConfirm")
+    @State private var dontAskAgain: Bool
     @State private var pendingDeleteFiles: [ImageFile] = []
     @State private var showChooseArchiveAlert = false
     @State private var pendingArchiveFiles: [ImageFile] = []
@@ -124,20 +124,89 @@ struct ContentView: View {
     @State private var gridColumnCount: Int = 1
     @State private var libraryPath: [LibraryRoute] = []
     @State private var contactSheetExportPresentation: ContactSheetExportPresentation?
-    @AppStorage("libraryMetadataInspectorPresented") private var isMetadataInspectorPresented = false
-    @AppStorage("detailMetadataPresented") private var isDetailMetadataPresented = true
-    @AppStorage("librarySidebarCollapsed") private var isLibrarySidebarCollapsed = false
+    @AppStorage private var isMetadataInspectorPresented: Bool
+    @AppStorage private var isDetailMetadataPresented: Bool
+    @AppStorage private var isLibrarySidebarCollapsed: Bool
     @State private var externalDriveNotice: String?
     @State private var searchText = ""
     @State private var selectedFileType = ""
     @State private var selectedTag = ""
-    @AppStorage("lastSelectedLibraryFolderID") private var lastSelectedLibraryFolderID = ""
-    @StateObject private var libraryStorage = LibraryStorage.shared
-    @StateObject private var contactSheetStorage = ContactSheetStorage.shared
-    @StateObject private var userPreferences = UserPreferences.shared
-    @StateObject private var archiveFolderStore = ArchiveFolderStore.shared
-    @StateObject private var libraryIndex = LibraryIndexStore.shared
+    @AppStorage private var lastSelectedLibraryFolderID: String
+    @StateObject private var libraryStorage: LibraryStorage
+    @StateObject private var contactSheetStorage: ContactSheetStorage
+    @StateObject private var userPreferences: UserPreferences
+    @StateObject private var archiveFolderStore: ArchiveFolderStore
+    @StateObject private var libraryIndex: LibraryIndexStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing-fixtures") {
+            let fixture = UITestFixture.make()
+            let defaults = fixture.userPreferences.defaultsStore
+            _selection = State(initialValue: .all)
+            _dontAskAgain = State(
+                initialValue: defaults.bool(forKey: "dontAskDeleteConfirm")
+            )
+            _isMetadataInspectorPresented = AppStorage(
+                wrappedValue: false,
+                "libraryMetadataInspectorPresented",
+                store: defaults
+            )
+            _isDetailMetadataPresented = AppStorage(
+                wrappedValue: true,
+                "detailMetadataPresented",
+                store: defaults
+            )
+            _isLibrarySidebarCollapsed = AppStorage(
+                wrappedValue: false,
+                "librarySidebarCollapsed",
+                store: defaults
+            )
+            _lastSelectedLibraryFolderID = AppStorage(
+                wrappedValue: "",
+                "lastSelectedLibraryFolderID",
+                store: defaults
+            )
+            _libraryStorage = StateObject(wrappedValue: fixture.libraryStorage)
+            _contactSheetStorage = StateObject(wrappedValue: fixture.contactSheetStorage)
+            _userPreferences = StateObject(wrappedValue: fixture.userPreferences)
+            _archiveFolderStore = StateObject(wrappedValue: fixture.archiveFolderStore)
+            _libraryIndex = StateObject(wrappedValue: fixture.libraryIndex)
+            return
+        }
+        #endif
+
+        let defaults = UserDefaults.standard
+        _dontAskAgain = State(
+            initialValue: defaults.bool(forKey: "dontAskDeleteConfirm")
+        )
+        _isMetadataInspectorPresented = AppStorage(
+            wrappedValue: false,
+            "libraryMetadataInspectorPresented",
+            store: defaults
+        )
+        _isDetailMetadataPresented = AppStorage(
+            wrappedValue: true,
+            "detailMetadataPresented",
+            store: defaults
+        )
+        _isLibrarySidebarCollapsed = AppStorage(
+            wrappedValue: false,
+            "librarySidebarCollapsed",
+            store: defaults
+        )
+        _lastSelectedLibraryFolderID = AppStorage(
+            wrappedValue: "",
+            "lastSelectedLibraryFolderID",
+            store: defaults
+        )
+        _libraryStorage = StateObject(wrappedValue: LibraryStorage.shared)
+        _contactSheetStorage = StateObject(wrappedValue: ContactSheetStorage.shared)
+        _userPreferences = StateObject(wrappedValue: UserPreferences.shared)
+        _archiveFolderStore = StateObject(wrappedValue: ArchiveFolderStore.shared)
+        _libraryIndex = StateObject(wrappedValue: LibraryIndexStore.shared)
+    }
 
     private var displayedGridThumbnailSize: CGFloat {
         liveGridThumbnailSize ?? gridThumbnailSize

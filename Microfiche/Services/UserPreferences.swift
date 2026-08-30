@@ -19,6 +19,8 @@ final class UserPreferences: ObservableObject {
 
     private let defaults: UserDefaults
 
+    var defaultsStore: UserDefaults { defaults }
+
     /// Master switch for the welcome sequence. Off hides onboarding (useful while testing).
     @Published var isOnboardingEnabled: Bool {
         didSet {

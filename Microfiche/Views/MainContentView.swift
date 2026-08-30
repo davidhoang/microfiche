@@ -302,9 +302,13 @@ private struct EmptyLibraryStateView: View {
                 Button("Try Again", action: onRetryUnavailableLocation)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("library-location.retry")
             }
         }
         .padding(.horizontal, 24)
+        .accessibilityIdentifier(
+            unavailableLocation == nil ? "library.empty" : "library-location.unavailable"
+        )
     }
 
     private var emptyStateMessage: String {
@@ -544,6 +548,11 @@ struct GridCell: View {
             onAddToContactSheet: onAddToContactSheet,
             onArchive: onArchive
         )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(file.name)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier("image.\(file.name)")
     }
 }
 
@@ -664,6 +673,11 @@ struct ImageListRow: View {
                 onDoubleClick: { onDoubleClickImage(file.id) }
             )
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(file.name)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier("image.\(file.name)")
     }
 }
 
