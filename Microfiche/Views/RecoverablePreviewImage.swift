@@ -47,6 +47,9 @@ struct RecoverablePreviewImage: View {
         case .downloading:
             ProgressView("Downloading from iCloud…")
                 .accessibilityIdentifier("image-load.downloading")
+        case .retrying:
+            ProgressView("Retrying…")
+                .accessibilityIdentifier("image-load.retrying")
         case .failed(let message):
             recoveryMessage(
                 title: "Image unavailable",

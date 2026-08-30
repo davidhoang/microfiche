@@ -10,6 +10,7 @@ enum ImageLoadPhase: Equatable {
     case idle
     case placeholder
     case downloading
+    case retrying
     case loading
     case loaded
     case failed(String)
@@ -37,7 +38,12 @@ struct ImageLoadState: Equatable {
     mutating func begin(for itemState: ICloudItemState) -> UUID {
         let id = UUID()
         requestID = id
-        phase = itemState.needsDownload ? .downloading : .loading
+        switch phase {
+        case .failed, .cancelled:
+            phase = .retrying
+        default:
+            phase = itemState.needsDownload ? .downloading : .loading
+        }
         return id
     }
 
@@ -89,7 +95,14 @@ final class PreviewImageLoadModel: ObservableObject {
     private var url: URL?
 
     func prepare(url: URL) {
-        guard self.url != url || state.phase == .idle else { return }
+        if self.url == url {
+            switch state.phase {
+            case .cancelled, .idle:
+                break
+            default:
+                return
+            }
+        }
         task?.cancel()
         self.url = url
         image = nil

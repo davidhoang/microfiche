@@ -19,7 +19,11 @@ struct UITestFixture {
         let root = fileManager.temporaryDirectory
             .appendingPathComponent("microfiche-ui-fixture-\(UUID().uuidString)", isDirectory: true)
         let photos = root.appendingPathComponent("Photos", isDirectory: true)
-        try? fileManager.createDirectory(at: photos, withIntermediateDirectories: true)
+        do {
+            try fileManager.createDirectory(at: photos, withIntermediateDirectories: true)
+        } catch {
+            preconditionFailure("Unable to create UI test fixture: \(error)")
+        }
 
         let pngData = Data(base64Encoded:
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
@@ -28,9 +32,16 @@ struct UITestFixture {
             let url = photos.appendingPathComponent(
                 String(format: "fixture-%02d.png", index)
             )
-            try? pngData.write(to: url)
+            do {
+                try pngData.write(to: url)
+            } catch {
+                preconditionFailure("Unable to write UI test image: \(error)")
+            }
             return url
         }
+        precondition(imageURLs.allSatisfy {
+            fileManager.fileExists(atPath: $0.path)
+        })
 
         let defaultsName = "MicroficheUITests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: defaultsName)!
@@ -43,7 +54,11 @@ struct UITestFixture {
             fileManager: fileManager,
             observesWorkspace: false
         )
-        _ = libraryStorage.addFolders([photos])
+        let addedLocations = libraryStorage.addFolders([photos])
+        precondition(
+            addedLocations.folders.count == 1,
+            "UI test fixture folder could not be linked"
+        )
 
         let contactSheetStorage = ContactSheetStorage(
             baseDirectory: root.appendingPathComponent("ContactSheets"),
@@ -58,6 +73,12 @@ struct UITestFixture {
         _ = contactSheetStorage.addImages(
             from: Array(imageURLs[4..<8]),
             to: secondSheet.id
+        )
+        precondition(
+            contactSheetStorage.contactSheets.count == 2
+                && contactSheetStorage.getImages(for: firstSheet.id).count == 4
+                && contactSheetStorage.getImages(for: secondSheet.id).count == 4,
+            "UI test contact sheets were not seeded"
         )
 
         return UITestFixture(

@@ -57,6 +57,36 @@ enum LibraryNavigation {
     }
 }
 
+struct LibraryBrowsingState: Equatable {
+    var selectedIDs: Set<UUID>
+    var focusedID: UUID?
+    var detailID: UUID?
+    var isQuickPreviewPresented: Bool
+}
+
+enum LibraryBrowsingRecovery {
+    static func reconciling(
+        _ state: LibraryBrowsingState,
+        with files: [ImageFile]
+    ) -> LibraryBrowsingState {
+        let availableIDs = Set(files.map(\.id))
+        let focusedID = state.focusedID.flatMap {
+            availableIDs.contains($0) ? $0 : nil
+        }
+        let detailID = state.detailID.flatMap {
+            availableIDs.contains($0) ? $0 : nil
+        }
+        return LibraryBrowsingState(
+            selectedIDs: state.selectedIDs.intersection(availableIDs),
+            focusedID: focusedID,
+            detailID: detailID,
+            isQuickPreviewPresented: focusedID == nil
+                ? false
+                : state.isQuickPreviewPresented
+        )
+    }
+}
+
 extension Notification.Name {
     static let microficheMoveSelectionToArchive = Notification.Name("microficheMoveSelectionToArchive")
 }
@@ -872,15 +902,20 @@ struct ContentView: View {
         }
 
         let nextFiles = libraryIndex.files(for: folderIDs)
-        let nextIDs = Set(nextFiles.map(\.id))
+        let recoveredState = LibraryBrowsingRecovery.reconciling(
+            LibraryBrowsingState(
+                selectedIDs: selectedImageFileIDs,
+                focusedID: focusedImageFileID,
+                detailID: detailImageID,
+                isQuickPreviewPresented: isQuickPreviewPresented
+            ),
+            with: nextFiles
+        )
         imageFiles = nextFiles
-        selectedImageFileIDs.formIntersection(nextIDs)
-
-        if let focusedImageFileID, !nextIDs.contains(focusedImageFileID) {
-            self.focusedImageFileID = nil
-            isQuickPreviewPresented = false
-        }
-        if let detailImageID, !nextIDs.contains(detailImageID) {
+        selectedImageFileIDs = recoveredState.selectedIDs
+        focusedImageFileID = recoveredState.focusedID
+        isQuickPreviewPresented = recoveredState.isQuickPreviewPresented
+        if recoveredState.detailID == nil, detailImageID != nil {
             libraryPath.removeAll()
         }
     }

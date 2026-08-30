@@ -70,18 +70,18 @@ final class MicroficheUITests: XCTestCase {
         XCTAssertTrue(inspectorButton.waitForExistence(timeout: 3))
         inspectorButton.click()
         XCTAssertTrue(
-            element("inspector.selection-summary", in: app)
+            element("inspector.content", in: app)
                 .waitForExistence(timeout: 2)
         )
         inspectorButton.click()
-        XCTAssertFalse(element("inspector.selection-summary", in: app).exists)
+        XCTAssertFalse(element("inspector.content", in: app).exists)
         inspectorButton.click()
         XCTAssertTrue(
-            element("inspector.selection-summary", in: app)
+            element("inspector.content", in: app)
                 .waitForExistence(timeout: 2)
         )
         inspectorButton.click()
-        XCTAssertFalse(element("inspector.selection-summary", in: app).exists)
+        XCTAssertFalse(element("inspector.content", in: app).exists)
     }
 
     @MainActor
@@ -110,6 +110,8 @@ final class MicroficheUITests: XCTestCase {
         XCTAssertTrue(second.isSelected)
         XCTAssertTrue(third.isSelected)
         fifth.click(forDuration: 0, modifierFlags: .shift)
+        XCTAssertTrue(third.isSelected)
+        XCTAssertTrue(fixtureImage(4, in: app).isSelected)
         XCTAssertTrue(fifth.isSelected)
 
         for _ in 0..<5 {
@@ -117,9 +119,9 @@ final class MicroficheUITests: XCTestCase {
         }
         XCTAssertTrue(first.isSelected)
 
-        first.typeKey(.rightArrow, modifierFlags: [])
+        app.typeKey(.rightArrow, modifierFlags: [])
         XCTAssertTrue(second.isSelected)
-        second.typeKey(.leftArrow, modifierFlags: [])
+        app.typeKey(.leftArrow, modifierFlags: [])
         XCTAssertTrue(first.isSelected)
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertFalse(first.isSelected)
@@ -171,19 +173,23 @@ final class MicroficheUITests: XCTestCase {
         let app = configuredApp()
         app.launch()
 
-        for index in 1...2 {
-            let image = fixtureImage(index, in: app)
-            XCTAssertTrue(image.waitForExistence(timeout: 5))
-            image.click()
-            element("inspector.toggle", in: app).click()
-            XCTAssertTrue(
-                element("inspector.selection-summary", in: app)
-                    .waitForExistence(timeout: 2)
-            )
+        let first = fixtureImage(1, in: app)
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        first.click()
+        element("inspector.toggle", in: app).click()
+        let inspectorFile = element("inspector.current-file", in: app)
+        XCTAssertTrue(inspectorFile.waitForExistence(timeout: 2))
+        XCTAssertEqual(inspectorFile.label, "fixture-01.png")
 
+        for index in 1...2 {
+            let removedImage = fixtureImage(index, in: app)
             app.typeKey(.delete, modifierFlags: [.command, .shift])
-            XCTAssertTrue(image.waitForNonExistence(timeout: 3))
-            XCTAssertFalse(element("inspector.selection-summary", in: app).exists)
+            XCTAssertTrue(removedImage.waitForNonExistence(timeout: 3))
+            XCTAssertTrue(inspectorFile.waitForExistence(timeout: 2))
+            XCTAssertEqual(
+                inspectorFile.label,
+                String(format: "fixture-%02d.png", index + 1)
+            )
         }
     }
 

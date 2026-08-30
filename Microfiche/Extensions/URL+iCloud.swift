@@ -70,12 +70,15 @@ actor ICloudItemDownloadCoordinator {
     }
 
     func prepareForReading(_ url: URL) async throws {
-        switch downloader.state(for: url) {
+        let initialState = downloader.state(for: url)
+        let isRetryingFailure: Bool
+        switch initialState {
         case .local, .current:
             return
-        case .failed(let message):
-            throw ICloudItemDownloadError.unavailable(message)
+        case .failed:
+            isRetryingFailure = true
         case .downloading, .notDownloaded:
+            isRetryingFailure = false
             break
         }
 
@@ -93,12 +96,16 @@ actor ICloudItemDownloadCoordinator {
         let download = Task {
             try downloader.requestDownload(for: url)
 
-            for _ in 0..<maxPollAttempts {
+            for attempt in 0..<maxPollAttempts {
                 try Task.checkCancellation()
                 switch downloader.state(for: url) {
                 case .local, .current:
                     return
                 case .failed(let message):
+                    if isRetryingFailure, attempt == 0 {
+                        try await sleep(pollInterval)
+                        continue
+                    }
                     throw ICloudItemDownloadError.unavailable(message)
                 case .downloading, .notDownloaded:
                     try await sleep(pollInterval)

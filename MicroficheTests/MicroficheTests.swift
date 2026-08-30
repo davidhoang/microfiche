@@ -515,6 +515,84 @@ final class MicroficheTests: XCTestCase {
         XCTAssertEqual(Set(secondApply.map(\.path)), [created.path])
     }
 
+    @MainActor
+    func testLinkedFolderDisconnectAndReconnectPreservesIdentityWithoutDuplicates() async throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-reconnect-\(UUID().uuidString)")
+        let photos = root.appendingPathComponent("Photos", isDirectory: true)
+        let libraryURL = root.appendingPathComponent("library.json")
+        let indexURL = root.appendingPathComponent("library-index.json")
+        try fileManager.createDirectory(at: photos, withIntermediateDirectories: true)
+        try Data("first".utf8).write(to: photos.appendingPathComponent("first.jpg"))
+        defer { try? fileManager.removeItem(at: root) }
+
+        let storage = LibraryStorage(
+            persistenceURL: libraryURL,
+            fileManager: fileManager,
+            observesWorkspace: false
+        )
+        let added = try XCTUnwrap(storage.addFolders([photos]).folders.first)
+        let index = LibraryIndexStore(
+            persistenceURL: indexURL,
+            fileManager: fileManager,
+            watchesFileSystem: false
+        )
+        index.configure(folders: storage.linkedFolders)
+        await index.reconcile(folderID: added.id)
+        XCTAssertEqual(index.files(for: [added.id]).map(\.name), ["first.jpg"])
+
+        try fileManager.removeItem(at: photos)
+        storage.refreshLocations()
+        XCTAssertEqual(storage.linkedFolders.map(\.id), [added.id])
+        XCTAssertFalse(try XCTUnwrap(storage.folder(id: added.id)).isAvailable)
+        index.configure(folders: storage.linkedFolders)
+        await index.reconcileAll()
+        XCTAssertEqual(index.files(for: [added.id]).map(\.name), ["first.jpg"])
+
+        try fileManager.createDirectory(at: photos, withIntermediateDirectories: true)
+        try Data("restored".utf8).write(to: photos.appendingPathComponent("restored.jpg"))
+        storage.refreshLocations()
+        XCTAssertEqual(storage.linkedFolders.map(\.id), [added.id])
+        XCTAssertTrue(try XCTUnwrap(storage.folder(id: added.id)).isAvailable)
+        index.configure(folders: storage.linkedFolders)
+        await index.reconcileAll()
+        XCTAssertEqual(index.files(for: [added.id]).map(\.name), ["restored.jpg"])
+    }
+
+    func testBrowsingStateClearsStaleSelectionOnDisconnectAndStaysClearAfterReconnect() {
+        let first = ImageFile(url: URL(fileURLWithPath: "/Volumes/Photos/first.jpg"))
+        let initial = LibraryBrowsingState(
+            selectedIDs: [first.id],
+            focusedID: first.id,
+            detailID: first.id,
+            isQuickPreviewPresented: true
+        )
+
+        let disconnected = LibraryBrowsingRecovery.reconciling(initial, with: [])
+        XCTAssertEqual(
+            disconnected,
+            LibraryBrowsingState(
+                selectedIDs: [],
+                focusedID: nil,
+                detailID: nil,
+                isQuickPreviewPresented: false
+            )
+        )
+
+        let restored = ImageFile(
+            url: URL(fileURLWithPath: "/Volumes/Photos/restored.jpg")
+        )
+        let reconnected = LibraryBrowsingRecovery.reconciling(
+            disconnected,
+            with: [first, restored]
+        )
+        XCTAssertTrue(reconnected.selectedIDs.isEmpty)
+        XCTAssertNil(reconnected.focusedID)
+        XCTAssertNil(reconnected.detailID)
+        XCTAssertFalse(reconnected.isQuickPreviewPresented)
+    }
+
     private func makeLinkedFolder(
         id: UUID = UUID(),
         url: URL,
@@ -651,7 +729,7 @@ final class MicroficheTests: XCTestCase {
         XCTAssertEqual(state.phase, .failed("Network unavailable"))
 
         let retry = state.begin(for: .downloading)
-        XCTAssertEqual(state.phase, .downloading)
+        XCTAssertEqual(state.phase, .retrying)
         XCTAssertTrue(state.cancel(requestID: retry))
         XCTAssertEqual(state.phase, .cancelled)
         XCTAssertFalse(state.cancel(requestID: retry))
@@ -676,6 +754,18 @@ final class MicroficheTests: XCTestCase {
         try await success.prepareForReading(url)
         try await success.prepareForReading(url)
         XCTAssertEqual(successDownloader.requestCount, 1)
+
+        let retryDownloader = StubICloudItemDownloader(states: [
+            .failed("Previous failure"), .failed("Previous failure"), .downloading, .current
+        ])
+        let retry = ICloudItemDownloadCoordinator(
+            downloader: retryDownloader,
+            maxPollAttempts: 4,
+            pollInterval: .zero,
+            sleep: { _ in }
+        )
+        try await retry.prepareForReading(url)
+        XCTAssertEqual(retryDownloader.requestCount, 1)
 
         let failed = ICloudItemDownloadCoordinator(
             downloader: StubICloudItemDownloader(states: [

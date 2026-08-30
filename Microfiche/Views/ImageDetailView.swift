@@ -231,6 +231,7 @@ struct ImageMetadataInspectorView: View {
             }
         }
         .microficheInspectorContentChrome()
+        .accessibilityIdentifier("inspector.content")
     }
 
     private var selectedLabel: FinderLabel? {
@@ -251,6 +252,7 @@ struct ImageMetadataInspectorView: View {
                     .font(.system(size: 15, weight: .semibold))
                     .lineLimit(2)
                     .textSelection(.enabled)
+                    .accessibilityIdentifier("inspector.current-file")
 
                 Text(file.url.deletingLastPathComponent().path)
                     .font(.caption)
