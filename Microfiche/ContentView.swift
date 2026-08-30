@@ -133,8 +133,6 @@ struct ContentView: View {
         static let maximumWidth: CGFloat = 360
     }
 
-    @Environment(\.toggleSidebar) private var toggleSidebar
-
     @State private var selection: Selection?
     @State private var imageFiles: [ImageFile] = []
     @State private var viewMode: ViewMode = .grid
@@ -345,7 +343,10 @@ struct ContentView: View {
                     Button("Move to Trash", role: .destructive) {
                         moveFilesToTrash(pendingDeleteFiles)
                         if dontAskAgain {
-                            UserDefaults.standard.set(true, forKey: "dontAskDeleteConfirm")
+                            userPreferences.defaultsStore.set(
+                                true,
+                                forKey: "dontAskDeleteConfirm"
+                            )
                         }
                     }
                     .keyboardShortcut(.defaultAction)
@@ -525,7 +526,11 @@ struct ContentView: View {
     private var libraryToolbar: some ToolbarContent {
         if !isImageDetailPresented {
             ToolbarItem {
-                Button(action: toggleSidebar) {
+                Button {
+                    withAnimation(MicroficheMotion.transition(reducedMotion: reduceMotion)) {
+                        isLibrarySidebarCollapsed.toggle()
+                    }
+                } label: {
                     Image(systemName: "sidebar.left")
                 }
                 .help("Toggle Sidebar")

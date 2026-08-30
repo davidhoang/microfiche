@@ -194,7 +194,7 @@ final class MicroficheUITests: XCTestCase {
     }
 
     @MainActor
-    func testSidebarAndInspectorTransitionBothDirectionsTwice() throws {
+    func testSidebarCollapseAndExpansionPersistAcrossRelaunchTwice() throws {
         let app = configuredApp()
         app.launch()
 
@@ -205,8 +205,41 @@ final class MicroficheUITests: XCTestCase {
         for _ in 0..<2 {
             toggle.click()
             XCTAssertTrue(sidebar.waitForNonExistence(timeout: 2))
+            relaunch(app)
+            XCTAssertTrue(sidebar.waitForNonExistence(timeout: 2))
+
             toggle.click()
             XCTAssertTrue(sidebar.waitForExistence(timeout: 2))
+            relaunch(app)
+            XCTAssertTrue(sidebar.waitForExistence(timeout: 2))
+        }
+    }
+
+    @MainActor
+    func testInspectorCollapseAndExpansionPersistAcrossRelaunchTwice() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let first = fixtureImage(1, in: app)
+        let inspector = element("inspector.content", in: app)
+        let toggle = element("inspector.toggle", in: app)
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        first.click()
+
+        for _ in 0..<2 {
+            toggle.click()
+            XCTAssertTrue(inspector.waitForExistence(timeout: 2))
+            relaunch(app)
+            XCTAssertTrue(first.waitForExistence(timeout: 5))
+            first.click()
+            XCTAssertTrue(inspector.waitForExistence(timeout: 2))
+
+            toggle.click()
+            XCTAssertTrue(inspector.waitForNonExistence(timeout: 2))
+            relaunch(app)
+            XCTAssertTrue(first.waitForExistence(timeout: 5))
+            first.click()
+            XCTAssertTrue(inspector.waitForNonExistence(timeout: 2))
         }
     }
 
@@ -222,14 +255,24 @@ final class MicroficheUITests: XCTestCase {
     @MainActor
     private func configuredApp() -> XCUIApplication {
         let app = XCUIApplication()
+        let defaultsSuite = "MicroficheUITests.\(UUID().uuidString)"
         app.launchArguments = [
             "-ApplePersistenceIgnoreState", "YES",
             "-isOnboardingEnabled", "NO",
             "-hasCompletedOnboarding", "YES",
             "--ui-testing",
-            "--ui-testing-fixtures"
+            "--ui-testing-fixtures",
+            "--ui-testing-defaults-suite", defaultsSuite
         ]
         return app
+    }
+
+    @MainActor
+    private func relaunch(_ app: XCUIApplication) {
+        app.terminate()
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))
+        app.launch()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
     }
 
     @MainActor

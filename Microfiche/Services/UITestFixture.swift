@@ -43,9 +43,15 @@ struct UITestFixture {
             fileManager.fileExists(atPath: $0.path)
         })
 
-        let defaultsName = "MicroficheUITests.\(UUID().uuidString)"
+        let arguments = ProcessInfo.processInfo.arguments
+        let defaultsName: String
+        if let markerIndex = arguments.firstIndex(of: "--ui-testing-defaults-suite"),
+           arguments.indices.contains(markerIndex + 1) {
+            defaultsName = arguments[markerIndex + 1]
+        } else {
+            defaultsName = "MicroficheUITests.\(UUID().uuidString)"
+        }
         let defaults = UserDefaults(suiteName: defaultsName)!
-        defaults.removePersistentDomain(forName: defaultsName)
         defaults.set(false, forKey: "isOnboardingEnabled")
         defaults.set(true, forKey: "hasCompletedOnboarding")
 

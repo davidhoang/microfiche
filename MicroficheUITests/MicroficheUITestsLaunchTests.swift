@@ -20,11 +20,20 @@ final class MicroficheUITestsLaunchTests: XCTestCase {
     @MainActor
     func testLaunch() throws {
         let app = XCUIApplication()
-        app.launchArguments.append("--ui-testing")
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState", "YES",
+            "--ui-testing",
+            "--ui-testing-fixtures",
+            "--ui-testing-defaults-suite",
+            "MicroficheUITests.Launch.\(UUID().uuidString)"
+        ]
         app.launch()
-
-        // Insert steps here to perform after app launch but before taking a screenshot,
-        // such as logging into a test account or navigating somewhere in the app
+        XCTAssertTrue(
+            app.descendants(matching: .any)
+                .matching(identifier: "image.fixture-01.png")
+                .firstMatch
+                .waitForExistence(timeout: 5)
+        )
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Launch Screen"
