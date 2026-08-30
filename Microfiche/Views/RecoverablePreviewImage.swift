@@ -26,6 +26,16 @@ struct RecoverablePreviewImage: View {
         .task(id: url) {
             model.prepare(url: url)
         }
+        .onChange(of: model.state.phase) { _, phase in
+            guard let message = MicroficheAccessibility.imageLoadAnnouncement(
+                phase: phase,
+                fileName: url.lastPathComponent
+            ) else { return }
+            MicroficheAccessibility.announce(
+                message,
+                priority: phase.isAccessibilityFailure ? .high : .medium
+            )
+        }
         .onDisappear {
             model.cancel()
         }
@@ -93,5 +103,17 @@ struct RecoverablePreviewImage: View {
         }
         .frame(maxWidth: 320)
         .padding()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+        .accessibilityValue(message)
+    }
+}
+
+private extension ImageLoadPhase {
+    var isAccessibilityFailure: Bool {
+        if case .failed = self {
+            return true
+        }
+        return false
     }
 }

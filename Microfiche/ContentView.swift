@@ -124,6 +124,11 @@ private struct ContactSheetExportPresentation: Identifiable {
     var id: UUID { contactSheet.id }
 }
 
+private struct AccessibilitySelectionSnapshot: Equatable {
+    let selectedIDs: Set<UUID>
+    let focusedID: UUID?
+}
+
 // MARK: - Content View
 
 struct ContentView: View {
@@ -270,6 +275,14 @@ struct ContentView: View {
                 .onChange(of: selectedTag) {
                     pruneSelectionToVisibleFiles()
                 }
+                .onChange(of: accessibilitySelectionSnapshot) {
+                    MicroficheAccessibility.announce(
+                        MicroficheAccessibility.selectionAnnouncement(
+                            selectedFiles: selectedImageFiles,
+                            focusedFile: focusedImageFile
+                        )
+                    )
+                }
                 .onChange(of: libraryStorage.linkedFolders) {
                     libraryIndex.configure(folders: libraryStorage.linkedFolders)
                     reloadSelectedLibraryLocation()
@@ -415,8 +428,14 @@ struct ContentView: View {
                     .zIndex(10)
                 }
         }
-        .animation(MicroficheMotion.snap, value: isQuickPreviewPresented)
-        .animation(MicroficheMotion.transition, value: userPreferences.isPresentingOnboarding)
+        .animation(
+            MicroficheMotion.snap(reducedMotion: reduceMotion),
+            value: isQuickPreviewPresented
+        )
+        .animation(
+            MicroficheMotion.transition(reducedMotion: reduceMotion),
+            value: userPreferences.isPresentingOnboarding
+        )
         .task {
             libraryIndex.configure(folders: libraryStorage.linkedFolders)
             if !ProcessInfo.processInfo.arguments.contains("--ui-testing") {
@@ -498,6 +517,7 @@ struct ContentView: View {
                 isResizingGrid: isResizingGrid,
                 gridColumnCount: $gridColumnCount,
                 selectedImageFileIDs: $selectedImageFileIDs,
+                focusedImageFileID: focusedImageFileID,
                 onSelectImage: handleImageSelection,
                 onDoubleClickImage: handleDoubleClickImage,
                 scrollToID: $scrollToID,
@@ -611,6 +631,13 @@ struct ContentView: View {
             return visible
         }
         return imageFiles.filter { selectedImageFileIDs.contains($0.id) }
+    }
+
+    private var accessibilitySelectionSnapshot: AccessibilitySelectionSnapshot {
+        AccessibilitySelectionSnapshot(
+            selectedIDs: selectedImageFileIDs,
+            focusedID: focusedImageFileID
+        )
     }
 
     private var focusedImageFile: ImageFile? {
@@ -875,7 +902,20 @@ struct ContentView: View {
         let supportedURLs = urls.filter {
             SupportedImageExtensions.contains($0)
         }
+        guard let sheet = contactSheetStorage.contactSheets.first(where: {
+            $0.id == sheetID
+        }) else { return }
+        let previousCount = sheet.imageIDs.count
         _ = contactSheetStorage.addImages(from: supportedURLs, to: sheetID)
+        let nextCount = contactSheetStorage.contactSheets.first(where: {
+            $0.id == sheetID
+        })?.imageIDs.count ?? previousCount
+        MicroficheAccessibility.announce(
+            MicroficheAccessibility.dropAnnouncement(
+                addedCount: max(0, nextCount - previousCount),
+                contactSheetName: sheet.name
+            )
+        )
 
         if selection == .contactSheet(sheetID) {
             imageFiles = contactSheetStorage.getImages(for: sheetID)

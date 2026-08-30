@@ -18,6 +18,10 @@ enum MicroficheMotion {
     /// Fluid movement for structural panels that resize the content canvas.
     static let panel = Animation.spring(response: 0.32, dampingFraction: 0.9)
 
+    static func isEnabled(reducedMotion: Bool) -> Bool {
+        !reducedMotion
+    }
+
     static func snap(reducedMotion: Bool) -> Animation? {
         reducedMotion ? nil : snap
     }
@@ -28,6 +32,20 @@ enum MicroficheMotion {
 
     static func panel(reducedMotion: Bool) -> Animation? {
         reducedMotion ? nil : panel
+    }
+}
+
+enum MicroficheContrast {
+    static func selectionFillOpacity(increased: Bool) -> Double {
+        increased ? 0.22 : 0.1
+    }
+
+    static func selectionStrokeOpacity(increased: Bool) -> Double {
+        increased ? 1 : 0.9
+    }
+
+    static func selectionStrokeWidth(increased: Bool) -> CGFloat {
+        increased ? 3 : 2
     }
 }
 
@@ -61,21 +79,51 @@ extension View {
     }
 
     /// Crisp content selection without glow or lift — planted, high-contrast framing.
-    @ViewBuilder
-    func contentSelectionChrome(isSelected: Bool, cornerRadius: CGFloat = 8) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    func contentSelectionChrome(
+        isSelected: Bool,
+        isFocused: Bool = false,
+        cornerRadius: CGFloat = 8
+    ) -> some View {
+        modifier(ContentSelectionChromeModifier(
+            isSelected: isSelected,
+            isFocused: isFocused,
+            cornerRadius: cornerRadius
+        ))
+    }
+}
 
-        if isSelected {
-            self
-                .padding(3)
-                .background(Color.accentColor.opacity(0.1), in: shape)
-                .overlay {
-                    shape
-                        .strokeBorder(Color.accentColor.opacity(0.9), lineWidth: 2)
+private struct ContentSelectionChromeModifier: ViewModifier {
+    let isSelected: Bool
+    let isFocused: Bool
+    let cornerRadius: CGFloat
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let increased = contrast == .increased
+
+        content
+            .padding(3)
+            .background(
+                isSelected
+                    ? Color.accentColor.opacity(
+                        MicroficheContrast.selectionFillOpacity(increased: increased)
+                    )
+                    : Color.clear,
+                in: shape
+            )
+            .overlay {
+                if isSelected || isFocused {
+                    shape.strokeBorder(
+                        Color.accentColor.opacity(
+                            MicroficheContrast.selectionStrokeOpacity(increased: increased)
+                        ),
+                        lineWidth: isFocused
+                            ? MicroficheContrast.selectionStrokeWidth(increased: increased)
+                            : (increased ? 2 : 1.5)
+                    )
                 }
-        } else {
-            self.padding(3)
-        }
+            }
     }
 }
 
@@ -85,36 +133,73 @@ extension View {
     /// Flat hover highlight for grid cells — tint only, no scale or shadow lift.
     @ViewBuilder
     func contentHoverDynamics(isHovered: Bool, isSelected: Bool, cornerRadius: CGFloat = 8) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-
-        self
-            .background {
-                if isHovered && !isSelected {
-                    shape.fill(Color.primary.opacity(0.045))
-                }
-            }
-            .overlay {
-                if isHovered && !isSelected {
-                    shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                }
-            }
-            .animation(MicroficheMotion.snap, value: isHovered)
+        modifier(ContentHoverModifier(
+            isHovered: isHovered,
+            isSelected: isSelected,
+            cornerRadius: cornerRadius
+        ))
     }
 
     /// Subtle background tint for sidebar/list rows on hover.
     @ViewBuilder
     func sidebarHoverBackground(isHovered: Bool, isSelected: Bool, cornerRadius: CGFloat = 6) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        modifier(SidebarHoverModifier(
+            isHovered: isHovered,
+            isSelected: isSelected,
+            cornerRadius: cornerRadius
+        ))
+    }
+}
 
-        self
+private struct ContentHoverModifier: ViewModifier {
+    let isHovered: Bool
+    let isSelected: Bool
+    let cornerRadius: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let increased = contrast == .increased
+
+        content
             .background {
                 if isHovered && !isSelected {
-                    shape.fill(Color.primary.opacity(0.05))
-                } else if isHovered && isSelected {
-                    shape.fill(Color.accentColor.opacity(0.22))
+                    shape.fill(Color.primary.opacity(increased ? 0.1 : 0.045))
                 }
             }
-            .animation(MicroficheMotion.snap, value: isHovered)
+            .overlay {
+                if isHovered && !isSelected {
+                    shape.strokeBorder(
+                        Color.primary.opacity(increased ? 0.3 : 0.08),
+                        lineWidth: increased ? 2 : 1
+                    )
+                }
+            }
+            .animation(MicroficheMotion.snap(reducedMotion: reduceMotion), value: isHovered)
+    }
+}
+
+private struct SidebarHoverModifier: ViewModifier {
+    let isHovered: Bool
+    let isSelected: Bool
+    let cornerRadius: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let increased = contrast == .increased
+
+        content
+            .background {
+                if isHovered && !isSelected {
+                    shape.fill(Color.primary.opacity(increased ? 0.1 : 0.05))
+                } else if isHovered && isSelected {
+                    shape.fill(Color.accentColor.opacity(increased ? 0.3 : 0.22))
+                }
+            }
+            .animation(MicroficheMotion.snap(reducedMotion: reduceMotion), value: isHovered)
     }
 }
 

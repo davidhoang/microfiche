@@ -213,6 +213,7 @@ private struct SidebarSection<Content: View>: View {
                 if let action {
                     SidebarAddButton(action: action)
                         .help(actionHelp ?? "Add")
+                        .accessibilityLabel(actionHelp ?? "Add")
                 }
             }
 
@@ -292,10 +293,15 @@ private struct SidebarStaticRow: View {
         .onTapGesture(perform: action)
         .accessibilityElement(children: .combine)
         .accessibilityValue(isSelected ? "Selected" : "")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityAddTraits(
+            isSelected ? [.isButton, .isSelected] : [.isButton]
+        )
         .accessibilityIdentifier(
             title == "All Images" ? "sidebar.all-images" : "sidebar.folder.\(title)"
         )
+        .accessibilityAction(.default) {
+            action()
+        }
     }
 }
 
@@ -326,6 +332,9 @@ private struct SidebarLocationRow: View {
         .sidebarRow(isSelected: false, isHovered: isHovered)
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onHover { isHovered = $0 }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(volume.name)
+        .accessibilityValue(volume.isConnected ? "Connected" : "Offline")
     }
 }
 
@@ -333,6 +342,8 @@ private struct SidebarRowModifier: ViewModifier {
     let isSelected: Bool
     let isHovered: Bool
     let isDropTargeted: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
 
     func body(content: Content) -> some View {
         content
@@ -347,22 +358,24 @@ private struct SidebarRowModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(borderColor, lineWidth: isDropTargeted ? 2 : 1)
             )
-            .animation(MicroficheMotion.snap, value: isSelected)
-            .animation(MicroficheMotion.snap, value: isHovered)
-            .animation(MicroficheMotion.snap, value: isDropTargeted)
+            .animation(MicroficheMotion.snap(reducedMotion: reduceMotion), value: isSelected)
+            .animation(MicroficheMotion.snap(reducedMotion: reduceMotion), value: isHovered)
+            .animation(MicroficheMotion.snap(reducedMotion: reduceMotion), value: isDropTargeted)
     }
 
     private var borderColor: Color {
         if isDropTargeted {
-            return Color.accentColor.opacity(0.82)
+            return Color.accentColor.opacity(contrast == .increased ? 1 : 0.82)
         }
 
-        return Color.clear
+        return isSelected && contrast == .increased
+            ? Color.accentColor
+            : Color.clear
     }
 
     private var rowBackground: Color {
         if isSelected {
-            return Color.primary.opacity(0.075)
+            return Color.primary.opacity(contrast == .increased ? 0.16 : 0.075)
         }
         if isHovered {
             return Color.primary.opacity(0.04)
@@ -495,8 +508,17 @@ struct ContactSheetSidebarItem: View {
         )
         .accessibilityElement(children: .combine)
         .accessibilityValue(isSelected ? "Selected" : "")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityAddTraits(
+            isSelected ? [.isButton, .isSelected] : [.isButton]
+        )
         .accessibilityIdentifier("contact-sheet-\(contactSheet.id.uuidString)-drop-target")
+        .accessibilityLabel(contactSheet.name)
+        .accessibilityHint("\(contactSheet.imageIDs.count) images. Accepts image drops.")
+        .accessibilityAction(.default) {
+            if !isEditing {
+                onSelect()
+            }
+        }
         .contextMenu {
             Button("Export PDF…") {
                 onExport()

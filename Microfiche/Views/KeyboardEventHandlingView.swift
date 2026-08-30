@@ -15,6 +15,7 @@ struct KeyboardEventHandlingView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = KeyView()
+        view.setAccessibilityElement(false)
         view.onDeletePressed = onDeletePressed
         view.onEscapePressed = onEscapePressed
         view.onSpacebarPressed = onSpacebarPressed

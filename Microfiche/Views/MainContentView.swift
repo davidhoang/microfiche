@@ -108,6 +108,7 @@ struct MainContentView: View {
     let isResizingGrid: Bool
     @Binding var gridColumnCount: Int
     @Binding var selectedImageFileIDs: Set<UUID>
+    let focusedImageFileID: UUID?
     let onSelectImage: (UUID) -> Void
     let onDoubleClickImage: (UUID) -> Void
     @Binding var scrollToID: UUID?
@@ -143,6 +144,7 @@ struct MainContentView: View {
                             ImageGridView(
                                 imageFiles: imageFiles,
                                 selectedImageFileIDs: $selectedImageFileIDs,
+                                focusedImageFileID: focusedImageFileID,
                                 onSelectImage: onSelectImage,
                                 onDoubleClickImage: onDoubleClickImage,
                                 thumbnailSize: gridThumbnailSize,
@@ -158,6 +160,7 @@ struct MainContentView: View {
                             ImageListView(
                                 imageFiles: imageFiles,
                                 selectedImageFileIDs: $selectedImageFileIDs,
+                                focusedImageFileID: focusedImageFileID,
                                 onSelectImage: onSelectImage,
                                 onDoubleClickImage: onDoubleClickImage,
                                 scrollToID: $scrollToID,
@@ -219,6 +222,7 @@ struct MainContentView: View {
 private struct FloatingViewModeControl: View {
     @Binding var selection: ViewMode
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         HStack(spacing: 2) {
@@ -251,7 +255,17 @@ private struct FloatingViewModeControl: View {
         }
         .padding(3)
         .floatingViewModeGlass()
-        .shadow(color: Color.black.opacity(0.08), radius: 6, y: 2)
+        .overlay {
+            if contrast == .increased {
+                Capsule()
+                    .strokeBorder(Color.primary, lineWidth: 1)
+            }
+        }
+        .shadow(
+            color: contrast == .increased ? .clear : Color.black.opacity(0.08),
+            radius: 6,
+            y: 2
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("View mode")
     }
@@ -306,6 +320,9 @@ private struct EmptyLibraryStateView: View {
             }
         }
         .padding(.horizontal, 24)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(emptyStateTitle)
+        .accessibilityValue(emptyStateMessage)
         .accessibilityIdentifier(
             unavailableLocation == nil ? "library.empty" : "library-location.unavailable"
         )
@@ -362,6 +379,7 @@ private struct ContactSheetDropOverlay: View {
                     .background(.regularMaterial, in: Capsule())
             }
             .allowsHitTesting(false)
+            .accessibilityHidden(true)
             .accessibilityIdentifier("contact-sheet-drop-target")
     }
 }
@@ -392,6 +410,7 @@ struct ImageGridView: View {
 
     let imageFiles: [ImageFile]
     @Binding var selectedImageFileIDs: Set<UUID>
+    let focusedImageFileID: UUID?
     let onSelectImage: (UUID) -> Void
     let onDoubleClickImage: (UUID) -> Void
     let thumbnailSize: CGFloat
@@ -402,6 +421,7 @@ struct ImageGridView: View {
     let contactSheets: [ContactSheet]
     let onAddToContactSheet: (UUID, URL) -> Void
     let onArchive: (ImageFile) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geometry in
@@ -419,6 +439,7 @@ struct ImageGridView: View {
                             GridCell(
                                 file: file,
                                 isSelected: selectedImageFileIDs.contains(file.id),
+                                isFocused: focusedImageFileID == file.id,
                                 size: thumbnailSize,
                                 isResizing: isResizing,
                                 aspectRatio: Layout.aspectRatio,
@@ -460,7 +481,7 @@ struct ImageGridView: View {
                 }
                 .onChange(of: scrollToID) { _, newID in
                     if let id = newID {
-                        withAnimation(MicroficheMotion.snap) {
+                        withAnimation(MicroficheMotion.snap(reducedMotion: reduceMotion)) {
                             proxy.scrollTo(id, anchor: .center)
                         }
                         DispatchQueue.main.async { scrollToID = nil }
@@ -474,7 +495,10 @@ struct ImageGridView: View {
                 transaction.disablesAnimations = true
             }
         }
-        .animation(isResizing ? nil : MicroficheMotion.snap, value: thumbnailSize)
+        .animation(
+            isResizing ? nil : MicroficheMotion.snap(reducedMotion: reduceMotion),
+            value: thumbnailSize
+        )
         .accessibilityIdentifier("image.grid")
     }
 
@@ -499,6 +523,7 @@ struct ImageGridView: View {
 struct GridCell: View {
     let file: ImageFile
     let isSelected: Bool
+    let isFocused: Bool
     let size: CGFloat
     let isResizing: Bool
     let aspectRatio: CGFloat
@@ -520,7 +545,7 @@ struct GridCell: View {
             onRename: onRename
         )
         .frame(width: size, height: size / aspectRatio)
-        .contentSelectionChrome(isSelected: isSelected)
+        .contentSelectionChrome(isSelected: isSelected, isFocused: isFocused)
         .contentHoverDynamics(
             isHovered: isResizing ? false : isHovered,
             isSelected: isSelected
@@ -553,6 +578,12 @@ struct GridCell: View {
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityIdentifier("image.\(file.name)")
+        .accessibilityAction(.default) {
+            onSelectImage(file.id)
+        }
+        .accessibilityAction(named: "Open Image") {
+            onDoubleClickImage(file.id)
+        }
     }
 }
 
@@ -561,6 +592,7 @@ struct GridCell: View {
 struct ImageListView: View {
     let imageFiles: [ImageFile]
     @Binding var selectedImageFileIDs: Set<UUID>
+    let focusedImageFileID: UUID?
     let onSelectImage: (UUID) -> Void
     let onDoubleClickImage: (UUID) -> Void
     @Binding var scrollToID: UUID?
@@ -568,6 +600,7 @@ struct ImageListView: View {
     let contactSheets: [ContactSheet]
     let onAddToContactSheet: (UUID, URL) -> Void
     let onArchive: (ImageFile) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -577,6 +610,7 @@ struct ImageListView: View {
                         ImageListRow(
                             file: file,
                             isSelected: selectedImageFileIDs.contains(file.id),
+                            isFocused: focusedImageFileID == file.id,
                             onSelectImage: onSelectImage,
                             onDoubleClickImage: onDoubleClickImage,
                             onRename: onRename,
@@ -600,7 +634,7 @@ struct ImageListView: View {
             }
             .onChange(of: scrollToID) { _, newID in
                 if let id = newID {
-                    withAnimation(MicroficheMotion.snap) {
+                    withAnimation(MicroficheMotion.snap(reducedMotion: reduceMotion)) {
                         proxy.scrollTo(id, anchor: .center)
                     }
                     DispatchQueue.main.async { scrollToID = nil }
@@ -615,6 +649,7 @@ struct ImageListView: View {
 struct ImageListRow: View {
     let file: ImageFile
     let isSelected: Bool
+    let isFocused: Bool
     let onSelectImage: (UUID) -> Void
     let onDoubleClickImage: (UUID) -> Void
     let onRename: (URL, String) -> Void
@@ -622,6 +657,7 @@ struct ImageListRow: View {
     let onAddToContactSheet: (UUID, URL) -> Void
     let onArchive: (ImageFile) -> Void
     @State private var isHovered = false
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         HStack(spacing: 12) {
@@ -651,9 +687,14 @@ struct ImageListRow: View {
                 .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
         }
         .overlay {
-            if isSelected {
+            if isSelected || isFocused {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1.5)
+                    .strokeBorder(
+                        Color.accentColor.opacity(
+                            contrast == .increased ? 1 : (isFocused ? 0.95 : 0.55)
+                        ),
+                        lineWidth: contrast == .increased ? 3 : (isFocused ? 2 : 1.5)
+                    )
             }
         }
         .sidebarHoverBackground(isHovered: isHovered, isSelected: isSelected, cornerRadius: 7)
@@ -678,6 +719,12 @@ struct ImageListRow: View {
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityIdentifier("image.\(file.name)")
+        .accessibilityAction(.default) {
+            onSelectImage(file.id)
+        }
+        .accessibilityAction(named: "Open Image") {
+            onDoubleClickImage(file.id)
+        }
     }
 }
 
