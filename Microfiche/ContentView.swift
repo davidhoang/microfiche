@@ -57,6 +57,36 @@ enum LibraryNavigation {
     }
 }
 
+struct LibraryBrowsingState: Equatable {
+    var selectedIDs: Set<UUID>
+    var focusedID: UUID?
+    var detailID: UUID?
+    var isQuickPreviewPresented: Bool
+}
+
+enum LibraryBrowsingRecovery {
+    static func reconciling(
+        _ state: LibraryBrowsingState,
+        with files: [ImageFile]
+    ) -> LibraryBrowsingState {
+        let availableIDs = Set(files.map(\.id))
+        let focusedID = state.focusedID.flatMap {
+            availableIDs.contains($0) ? $0 : nil
+        }
+        let detailID = state.detailID.flatMap {
+            availableIDs.contains($0) ? $0 : nil
+        }
+        return LibraryBrowsingState(
+            selectedIDs: state.selectedIDs.intersection(availableIDs),
+            focusedID: focusedID,
+            detailID: detailID,
+            isQuickPreviewPresented: focusedID == nil
+                ? false
+                : state.isQuickPreviewPresented
+        )
+    }
+}
+
 extension Notification.Name {
     static let microficheMoveSelectionToArchive = Notification.Name("microficheMoveSelectionToArchive")
 }
@@ -103,8 +133,6 @@ struct ContentView: View {
         static let maximumWidth: CGFloat = 360
     }
 
-    @Environment(\.toggleSidebar) private var toggleSidebar
-
     @State private var selection: Selection?
     @State private var imageFiles: [ImageFile] = []
     @State private var viewMode: ViewMode = .grid
@@ -114,7 +142,7 @@ struct ContentView: View {
     @State private var selectedImageFileIDs: Set<UUID> = []
     @State private var focusedImageFileID: UUID?
     @State private var showDeleteAlert: Bool = false
-    @State private var dontAskAgain: Bool = UserDefaults.standard.bool(forKey: "dontAskDeleteConfirm")
+    @State private var dontAskAgain: Bool
     @State private var pendingDeleteFiles: [ImageFile] = []
     @State private var showChooseArchiveAlert = false
     @State private var pendingArchiveFiles: [ImageFile] = []
@@ -124,20 +152,89 @@ struct ContentView: View {
     @State private var gridColumnCount: Int = 1
     @State private var libraryPath: [LibraryRoute] = []
     @State private var contactSheetExportPresentation: ContactSheetExportPresentation?
-    @AppStorage("libraryMetadataInspectorPresented") private var isMetadataInspectorPresented = false
-    @AppStorage("detailMetadataPresented") private var isDetailMetadataPresented = true
-    @AppStorage("librarySidebarCollapsed") private var isLibrarySidebarCollapsed = false
+    @AppStorage private var isMetadataInspectorPresented: Bool
+    @AppStorage private var isDetailMetadataPresented: Bool
+    @AppStorage private var isLibrarySidebarCollapsed: Bool
     @State private var externalDriveNotice: String?
     @State private var searchText = ""
     @State private var selectedFileType = ""
     @State private var selectedTag = ""
-    @AppStorage("lastSelectedLibraryFolderID") private var lastSelectedLibraryFolderID = ""
-    @StateObject private var libraryStorage = LibraryStorage.shared
-    @StateObject private var contactSheetStorage = ContactSheetStorage.shared
-    @StateObject private var userPreferences = UserPreferences.shared
-    @StateObject private var archiveFolderStore = ArchiveFolderStore.shared
-    @StateObject private var libraryIndex = LibraryIndexStore.shared
+    @AppStorage private var lastSelectedLibraryFolderID: String
+    @StateObject private var libraryStorage: LibraryStorage
+    @StateObject private var contactSheetStorage: ContactSheetStorage
+    @StateObject private var userPreferences: UserPreferences
+    @StateObject private var archiveFolderStore: ArchiveFolderStore
+    @StateObject private var libraryIndex: LibraryIndexStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing-fixtures") {
+            let fixture = UITestFixture.make()
+            let defaults = fixture.userPreferences.defaultsStore
+            _selection = State(initialValue: .all)
+            _dontAskAgain = State(
+                initialValue: defaults.bool(forKey: "dontAskDeleteConfirm")
+            )
+            _isMetadataInspectorPresented = AppStorage(
+                wrappedValue: false,
+                "libraryMetadataInspectorPresented",
+                store: defaults
+            )
+            _isDetailMetadataPresented = AppStorage(
+                wrappedValue: true,
+                "detailMetadataPresented",
+                store: defaults
+            )
+            _isLibrarySidebarCollapsed = AppStorage(
+                wrappedValue: false,
+                "librarySidebarCollapsed",
+                store: defaults
+            )
+            _lastSelectedLibraryFolderID = AppStorage(
+                wrappedValue: "",
+                "lastSelectedLibraryFolderID",
+                store: defaults
+            )
+            _libraryStorage = StateObject(wrappedValue: fixture.libraryStorage)
+            _contactSheetStorage = StateObject(wrappedValue: fixture.contactSheetStorage)
+            _userPreferences = StateObject(wrappedValue: fixture.userPreferences)
+            _archiveFolderStore = StateObject(wrappedValue: fixture.archiveFolderStore)
+            _libraryIndex = StateObject(wrappedValue: fixture.libraryIndex)
+            return
+        }
+        #endif
+
+        let defaults = UserDefaults.standard
+        _dontAskAgain = State(
+            initialValue: defaults.bool(forKey: "dontAskDeleteConfirm")
+        )
+        _isMetadataInspectorPresented = AppStorage(
+            wrappedValue: false,
+            "libraryMetadataInspectorPresented",
+            store: defaults
+        )
+        _isDetailMetadataPresented = AppStorage(
+            wrappedValue: true,
+            "detailMetadataPresented",
+            store: defaults
+        )
+        _isLibrarySidebarCollapsed = AppStorage(
+            wrappedValue: false,
+            "librarySidebarCollapsed",
+            store: defaults
+        )
+        _lastSelectedLibraryFolderID = AppStorage(
+            wrappedValue: "",
+            "lastSelectedLibraryFolderID",
+            store: defaults
+        )
+        _libraryStorage = StateObject(wrappedValue: LibraryStorage.shared)
+        _contactSheetStorage = StateObject(wrappedValue: ContactSheetStorage.shared)
+        _userPreferences = StateObject(wrappedValue: UserPreferences.shared)
+        _archiveFolderStore = StateObject(wrappedValue: ArchiveFolderStore.shared)
+        _libraryIndex = StateObject(wrappedValue: LibraryIndexStore.shared)
+    }
 
     private var displayedGridThumbnailSize: CGFloat {
         liveGridThumbnailSize ?? gridThumbnailSize
@@ -246,7 +343,10 @@ struct ContentView: View {
                     Button("Move to Trash", role: .destructive) {
                         moveFilesToTrash(pendingDeleteFiles)
                         if dontAskAgain {
-                            UserDefaults.standard.set(true, forKey: "dontAskDeleteConfirm")
+                            userPreferences.defaultsStore.set(
+                                true,
+                                forKey: "dontAskDeleteConfirm"
+                            )
                         }
                     }
                     .keyboardShortcut(.defaultAction)
@@ -426,7 +526,11 @@ struct ContentView: View {
     private var libraryToolbar: some ToolbarContent {
         if !isImageDetailPresented {
             ToolbarItem {
-                Button(action: toggleSidebar) {
+                Button {
+                    withAnimation(MicroficheMotion.transition(reducedMotion: reduceMotion)) {
+                        isLibrarySidebarCollapsed.toggle()
+                    }
+                } label: {
                     Image(systemName: "sidebar.left")
                 }
                 .help("Toggle Sidebar")
@@ -803,15 +907,20 @@ struct ContentView: View {
         }
 
         let nextFiles = libraryIndex.files(for: folderIDs)
-        let nextIDs = Set(nextFiles.map(\.id))
+        let recoveredState = LibraryBrowsingRecovery.reconciling(
+            LibraryBrowsingState(
+                selectedIDs: selectedImageFileIDs,
+                focusedID: focusedImageFileID,
+                detailID: detailImageID,
+                isQuickPreviewPresented: isQuickPreviewPresented
+            ),
+            with: nextFiles
+        )
         imageFiles = nextFiles
-        selectedImageFileIDs.formIntersection(nextIDs)
-
-        if let focusedImageFileID, !nextIDs.contains(focusedImageFileID) {
-            self.focusedImageFileID = nil
-            isQuickPreviewPresented = false
-        }
-        if let detailImageID, !nextIDs.contains(detailImageID) {
+        selectedImageFileIDs = recoveredState.selectedIDs
+        focusedImageFileID = recoveredState.focusedID
+        isQuickPreviewPresented = recoveredState.isQuickPreviewPresented
+        if recoveredState.detailID == nil, detailImageID != nil {
             libraryPath.removeAll()
         }
     }

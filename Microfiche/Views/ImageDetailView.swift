@@ -15,10 +15,6 @@ struct ImageDetailView: View {
     let file: ImageFile
     @Binding var isMetadataPresented: Bool
 
-    @State private var detailImage: NSImage?
-    @State private var isLoadingImage = true
-    @State private var imageRequestURL: URL?
-
     var body: some View {
         extendedImageCanvas
             .inspector(isPresented: $isMetadataPresented) {
@@ -60,9 +56,6 @@ struct ImageDetailView: View {
                     .help("More")
                 }
             }
-            .task(id: file.id) {
-                loadDetailImage()
-            }
     }
 
     @ViewBuilder
@@ -85,43 +78,16 @@ struct ImageDetailView: View {
                 } else if file.url.pathExtension.lowercased() == "svg" {
                     SVGImageView(url: file.url)
                         .aspectRatio(contentMode: .fit)
-                } else if let image = detailImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                } else if isLoadingImage {
-                    ProgressView()
+                } else {
+                    RecoverablePreviewImage(url: file.url)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(28)
         }
+        .accessibilityIdentifier("image.detail")
     }
 
-    private func loadDetailImage() {
-        detailImage = nil
-        isLoadingImage = true
-        imageRequestURL = file.url
-
-        guard !["pdf", "svg"].contains(file.url.pathExtension.lowercased()) else {
-            isLoadingImage = false
-            return
-        }
-
-        if let cached = PreviewImageCache.shared.getImage(for: file.url) {
-            detailImage = cached
-            isLoadingImage = false
-            return
-        }
-
-        let requestedURL = file.url
-        PreviewImageCache.shared.preloadImage(for: requestedURL) { image in
-            guard imageRequestURL == requestedURL else { return }
-            detailImage = image
-            isLoadingImage = false
-        }
-    }
 }
 
 // MARK: - Metadata Inspector
@@ -265,6 +231,7 @@ struct ImageMetadataInspectorView: View {
             }
         }
         .microficheInspectorContentChrome()
+        .accessibilityIdentifier("inspector.content")
     }
 
     private var selectedLabel: FinderLabel? {
@@ -285,6 +252,7 @@ struct ImageMetadataInspectorView: View {
                     .font(.system(size: 15, weight: .semibold))
                     .lineLimit(2)
                     .textSelection(.enabled)
+                    .accessibilityIdentifier("inspector.current-file")
 
                 Text(file.url.deletingLastPathComponent().path)
                     .font(.caption)

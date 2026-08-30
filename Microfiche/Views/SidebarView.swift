@@ -290,6 +290,12 @@ private struct SidebarStaticRow: View {
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onHover { isHovered = $0 }
         .onTapGesture(perform: action)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(isSelected ? "Selected" : "")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier(
+            title == "All Images" ? "sidebar.all-images" : "sidebar.folder.\(title)"
+        )
     }
 }
 
@@ -487,6 +493,9 @@ struct ContactSheetSidebarItem: View {
             isTargeted: $isDropTargeted,
             perform: handleDrop
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(isSelected ? "Selected" : "")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityIdentifier("contact-sheet-\(contactSheet.id.uuidString)-drop-target")
         .contextMenu {
             Button("Export PDF…") {

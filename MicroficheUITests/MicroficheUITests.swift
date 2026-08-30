@@ -62,14 +62,185 @@ final class MicroficheUITests: XCTestCase {
         let app = configuredApp()
         app.launch()
 
+        let firstImage = element("image.fixture-01.png", in: app)
+        XCTAssertTrue(firstImage.waitForExistence(timeout: 5))
+        firstImage.click()
+
         let inspectorButton = element("inspector.toggle", in: app)
         XCTAssertTrue(inspectorButton.waitForExistence(timeout: 3))
         inspectorButton.click()
-        XCTAssertTrue(inspectorButton.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            element("inspector.content", in: app)
+                .waitForExistence(timeout: 2)
+        )
         inspectorButton.click()
-        XCTAssertTrue(inspectorButton.exists)
+        XCTAssertFalse(element("inspector.content", in: app).exists)
         inspectorButton.click()
-        XCTAssertTrue(inspectorButton.exists)
+        XCTAssertTrue(
+            element("inspector.content", in: app)
+                .waitForExistence(timeout: 2)
+        )
+        inspectorButton.click()
+        XCTAssertFalse(element("inspector.content", in: app).exists)
+    }
+
+    @MainActor
+    func testFixtureLibraryAndRepeatedSelectionTransitions() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let first = fixtureImage(1, in: app)
+        let second = fixtureImage(2, in: app)
+        let third = fixtureImage(3, in: app)
+        let fifth = fixtureImage(5, in: app)
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(fifth.exists)
+        XCTAssertTrue(app.staticTexts["First Review"].exists)
+        XCTAssertTrue(app.staticTexts["Second Review"].exists)
+        XCTAssertEqual(first.value as? String, "Not selected")
+
+        first.click()
+        XCTAssertTrue(first.isSelected)
+        second.click()
+        XCTAssertTrue(second.isSelected)
+        second.click()
+        XCTAssertTrue(second.isSelected)
+
+        third.click(forDuration: 0, modifierFlags: .command)
+        XCTAssertTrue(second.isSelected)
+        XCTAssertTrue(third.isSelected)
+        fifth.click(forDuration: 0, modifierFlags: .shift)
+        XCTAssertTrue(third.isSelected)
+        XCTAssertTrue(fixtureImage(4, in: app).isSelected)
+        XCTAssertTrue(fifth.isSelected)
+
+        for _ in 0..<5 {
+            first.click()
+        }
+        XCTAssertTrue(first.isSelected)
+
+        app.typeKey(.rightArrow, modifierFlags: [])
+        XCTAssertTrue(second.isSelected)
+        app.typeKey(.leftArrow, modifierFlags: [])
+        XCTAssertTrue(first.isSelected)
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertFalse(first.isSelected)
+
+        element("viewMode.list", in: app).click()
+        XCTAssertTrue(element("viewMode.list", in: app).isSelected)
+        third.click()
+        XCTAssertTrue(third.isSelected)
+        element("viewMode.grid", in: app).click()
+        XCTAssertTrue(element("viewMode.grid", in: app).isSelected)
+    }
+
+    @MainActor
+    func testDoubleClickDragAndContextMenuDoNotDisableLaterClicks() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let first = fixtureImage(1, in: app)
+        let second = fixtureImage(2, in: app)
+        let third = fixtureImage(3, in: app)
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+
+        for image in [first, second] {
+            for _ in 0..<2 {
+                image.doubleClick()
+                XCTAssertTrue(
+                    element("image.detail", in: app).waitForExistence(timeout: 2)
+                )
+                app.typeKey(.escape, modifierFlags: [])
+                XCTAssertTrue(first.waitForExistence(timeout: 2))
+            }
+        }
+
+        let start = first.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let end = first.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+        start.press(forDuration: 0.2, thenDragTo: end)
+        second.click()
+        XCTAssertTrue(second.isSelected)
+
+        second.rightClick()
+        XCTAssertTrue(app.menuItems["Move to Archive"].waitForExistence(timeout: 2))
+        app.typeKey(.escape, modifierFlags: [])
+        third.click()
+        XCTAssertTrue(third.isSelected)
+    }
+
+    @MainActor
+    func testRemovingSelectedImageClearsInspectorWithoutStaleContent() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let first = fixtureImage(1, in: app)
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        first.click()
+        element("inspector.toggle", in: app).click()
+        let inspectorFile = element("inspector.current-file", in: app)
+        XCTAssertTrue(inspectorFile.waitForExistence(timeout: 2))
+        XCTAssertEqual(inspectorFile.label, "fixture-01.png")
+
+        for index in 1...2 {
+            let removedImage = fixtureImage(index, in: app)
+            app.typeKey(.delete, modifierFlags: [.command, .shift])
+            XCTAssertTrue(removedImage.waitForNonExistence(timeout: 3))
+            XCTAssertTrue(inspectorFile.waitForExistence(timeout: 2))
+            XCTAssertEqual(
+                inspectorFile.label,
+                String(format: "fixture-%02d.png", index + 1)
+            )
+        }
+    }
+
+    @MainActor
+    func testSidebarCollapseAndExpansionPersistAcrossRelaunchTwice() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let sidebar = element("library.sidebar", in: app)
+        let toggle = element("sidebar.toggle", in: app)
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
+
+        for _ in 0..<2 {
+            toggle.click()
+            XCTAssertTrue(sidebar.waitForNonExistence(timeout: 2))
+            relaunch(app)
+            XCTAssertTrue(sidebar.waitForNonExistence(timeout: 2))
+
+            toggle.click()
+            XCTAssertTrue(sidebar.waitForExistence(timeout: 2))
+            relaunch(app)
+            XCTAssertTrue(sidebar.waitForExistence(timeout: 2))
+        }
+    }
+
+    @MainActor
+    func testInspectorCollapseAndExpansionPersistAcrossRelaunchTwice() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let first = fixtureImage(1, in: app)
+        let inspector = element("inspector.content", in: app)
+        let toggle = element("inspector.toggle", in: app)
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        first.click()
+
+        for _ in 0..<2 {
+            toggle.click()
+            XCTAssertTrue(inspector.waitForExistence(timeout: 2))
+            relaunch(app)
+            XCTAssertTrue(first.waitForExistence(timeout: 5))
+            first.click()
+            XCTAssertTrue(inspector.waitForExistence(timeout: 2))
+
+            toggle.click()
+            XCTAssertTrue(inspector.waitForNonExistence(timeout: 2))
+            relaunch(app)
+            XCTAssertTrue(first.waitForExistence(timeout: 5))
+            first.click()
+            XCTAssertTrue(inspector.waitForNonExistence(timeout: 2))
+        }
     }
 
     @MainActor
@@ -84,13 +255,29 @@ final class MicroficheUITests: XCTestCase {
     @MainActor
     private func configuredApp() -> XCUIApplication {
         let app = XCUIApplication()
+        let defaultsSuite = "MicroficheUITests.\(UUID().uuidString)"
         app.launchArguments = [
             "-ApplePersistenceIgnoreState", "YES",
             "-isOnboardingEnabled", "NO",
             "-hasCompletedOnboarding", "YES",
-            "--ui-testing"
+            "--ui-testing",
+            "--ui-testing-fixtures",
+            "--ui-testing-defaults-suite", defaultsSuite
         ]
         return app
+    }
+
+    @MainActor
+    private func relaunch(_ app: XCUIApplication) {
+        app.terminate()
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))
+        app.launch()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func fixtureImage(_ index: Int, in app: XCUIApplication) -> XCUIElement {
+        element(String(format: "image.fixture-%02d.png", index), in: app)
     }
 
     private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
