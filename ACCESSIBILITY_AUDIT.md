@@ -13,6 +13,7 @@ This checklist covers the library, detail, quick preview, inspector, and contact
 | Announcements | Empty/single/multiple selection, focused item, image loading/failure/cancellation, and contact-sheet drop outcomes |
 | Reduce Motion | All shared snap, transition, and panel tokens resolve to no animation; repeated preview and view-mode transitions run with Reduce Motion enabled |
 | Increased contrast | Selection fill/stroke metrics strengthen; repeated selection and view transitions run with a deterministic Increased Contrast override |
+| Reduce Transparency | Glass panels, floating controls, inspector reading surfaces, and detail extension effects use deterministic solid-surface fallbacks |
 
 ## Manual VoiceOver audit
 

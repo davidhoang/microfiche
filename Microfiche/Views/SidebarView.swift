@@ -333,8 +333,9 @@ private struct SidebarLocationRow: View {
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onHover { isHovered = $0 }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(volume.name)
+        .accessibilityLabel("\(volume.name), external drive")
         .accessibilityValue(volume.isConnected ? "Connected" : "Offline")
+        .accessibilityIdentifier("sidebar.location.\(volume.id)")
     }
 }
 

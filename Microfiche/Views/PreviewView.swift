@@ -39,6 +39,8 @@ struct PreviewView: View {
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .accessibilityLabel("Quick preview of \(file.name)")
+        .accessibilityHint("Press Escape to close")
+        .accessibilityIdentifier("preview.quick")
         .accessibilityAction(named: "Close Preview") {
             onDismiss()
         }

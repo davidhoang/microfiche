@@ -277,10 +277,37 @@ final class MicroficheUITests: XCTestCase {
     }
 
     @MainActor
-    func testReduceMotionAndIncreasedContrastSupportRepeatedTransitions() throws {
+    func testInspectorTextEditingKeepsKeyboardInputOutOfLibraryNavigation() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let first = fixtureImage(1, in: app)
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        first.click()
+        element("inspector.toggle", in: app).click()
+
+        let replace = element("inspector.replace-comments", in: app)
+        XCTAssertTrue(replace.waitForExistence(timeout: 2))
+
+        for attempt in 1...2 {
+            replace.click()
+            let editor = element("inspector.replace-comments.editor", in: app)
+            XCTAssertTrue(editor.waitForExistence(timeout: 2))
+            editor.click()
+            editor.typeText("Keyboard audit \(attempt)")
+            editor.typeKey(.rightArrow, modifierFlags: [])
+            XCTAssertTrue(first.isSelected)
+            element("inspector.replace-comments.cancel", in: app).click()
+            XCTAssertTrue(editor.waitForNonExistence(timeout: 2))
+        }
+    }
+
+    @MainActor
+    func testAccessibilityAppearancesSupportRepeatedTransitions() throws {
         let app = configuredApp(additionalArguments: [
             "--ui-testing-reduce-motion",
-            "--ui-testing-increased-contrast"
+            "--ui-testing-increased-contrast",
+            "--ui-testing-reduce-transparency"
         ])
         app.launch()
 
@@ -291,20 +318,14 @@ final class MicroficheUITests: XCTestCase {
             first.click()
             XCTAssertTrue(first.isSelected)
             app.typeKey(.space, modifierFlags: [])
-            XCTAssertTrue(
-                app.descendants(matching: .any)
-                    .matching(NSPredicate(
-                        format: "label == %@",
-                        "Quick preview of fixture-01.png"
-                    ))
-                    .firstMatch
-                    .waitForExistence(timeout: 2)
-            )
+            XCTAssertTrue(element("preview.quick", in: app).waitForExistence(timeout: 2))
             app.typeKey(.escape, modifierFlags: [])
+            XCTAssertTrue(element("preview.quick", in: app).waitForNonExistence(timeout: 2))
             XCTAssertTrue(first.waitForExistence(timeout: 2))
 
             element("viewMode.list", in: app).click()
             XCTAssertTrue(element("viewMode.list", in: app).isSelected)
+            XCTAssertTrue(element("image.list", in: app).exists)
             element("viewMode.grid", in: app).click()
             XCTAssertTrue(element("viewMode.grid", in: app).isSelected)
         }

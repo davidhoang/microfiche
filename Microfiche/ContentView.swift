@@ -565,6 +565,7 @@ struct ContentView: View {
                         Image(systemName: "photo")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
 
                         Slider(
                             value: gridThumbnailSizeBinding,
@@ -578,6 +579,7 @@ struct ContentView: View {
                         Image(systemName: "photo.fill")
                             .font(.system(size: 15))
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                     }
                     .fixedSize()
                     .help("Thumbnail Size")
@@ -600,6 +602,11 @@ struct ContentView: View {
                 .disabled(selectedImageFileIDs.isEmpty)
                 .help(isMetadataInspectorPresented ? "Hide Info" : "Show Info")
                 .accessibilityLabel(isMetadataInspectorPresented ? "Hide inspector" : "Show inspector")
+                .accessibilityHint(
+                    selectedImageFileIDs.isEmpty
+                        ? "Select an image to inspect its metadata"
+                        : "Shows metadata for the selected images"
+                )
                 .accessibilityIdentifier("inspector.toggle")
             }
             .hideSharedBackgroundIfAvailable()
@@ -675,6 +682,21 @@ struct ContentView: View {
         ImageMetadataStore.shared.allTags(for: imageFiles.map(\.url))
     }
 
+    private var filterAccessibilityValue: String {
+        var parts: [String] = []
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !query.isEmpty {
+            parts.append("Search \(query)")
+        }
+        if !selectedFileType.isEmpty {
+            parts.append("File type \(selectedFileType.uppercased())")
+        }
+        if !selectedTag.isEmpty {
+            parts.append("Tag \(selectedTag)")
+        }
+        return parts.isEmpty ? "No filters" : parts.joined(separator: ", ")
+    }
+
     private var filterMenu: some View {
         Menu {
             Picker("File Type", selection: $selectedFileType) {
@@ -703,7 +725,7 @@ struct ContentView: View {
         }
         .help("Filter Library")
         .accessibilityLabel("Filter library")
-        .accessibilityValue(hasActiveFilter ? "Filters active" : "No filters")
+        .accessibilityValue(filterAccessibilityValue)
         .accessibilityIdentifier("library.filter")
     }
 

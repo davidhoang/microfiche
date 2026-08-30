@@ -208,6 +208,8 @@ private struct SidebarHoverModifier: ViewModifier {
 struct LiquidGlassPanel<Content: View>: View {
     let cornerRadius: CGFloat
     let content: Content
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
 
     init(cornerRadius: CGFloat = 14, @ViewBuilder content: () -> Content) {
         self.cornerRadius = cornerRadius
@@ -217,7 +219,11 @@ struct LiquidGlassPanel<Content: View>: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
-        if #available(macOS 26.0, *) {
+        if reduceTransparency || contrast == .increased {
+            content
+                .background(Color(NSColor.controlBackgroundColor), in: shape)
+                .overlay(shape.strokeBorder(Color(NSColor.separatorColor), lineWidth: 1))
+        } else if #available(macOS 26.0, *) {
             content
                 .background {
                     shape
@@ -242,8 +248,14 @@ private struct SidebarSurface: View {
 }
 
 private struct InspectorReadingSurface: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
     var body: some View {
-        if #available(macOS 26.0, *) {
+        if reduceTransparency || contrast == .increased {
+            Color(NSColor.controlBackgroundColor)
+                .ignoresSafeArea()
+        } else if #available(macOS 26.0, *) {
             // Keep a trace of the system glass tint without allowing extended
             // image colors to compete with metadata text and controls.
             Color(NSColor.windowBackgroundColor)

@@ -37,6 +37,13 @@ struct MicroficheApp: App {
                     }
                     #endif
                 }
+                .transformEnvironment(\.accessibilityReduceTransparency) { reduceTransparency in
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-testing-reduce-transparency") {
+                        reduceTransparency = true
+                    }
+                    #endif
+                }
         }
         .defaultSize(width: WindowLayout.defaultWidth, height: WindowLayout.defaultHeight)
         .defaultPosition(.center)

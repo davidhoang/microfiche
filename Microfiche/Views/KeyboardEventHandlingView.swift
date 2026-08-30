@@ -7,6 +7,15 @@
 
 import SwiftUI
 
+enum LibraryKeyboardFocusPolicy {
+    static func shouldHandleLibraryKeys(
+        isVoiceOverRunning: Bool,
+        isTextInputFirstResponder: Bool
+    ) -> Bool {
+        !isVoiceOverRunning && !isTextInputFirstResponder
+    }
+}
+
 struct KeyboardEventHandlingView: NSViewRepresentable {
     var onDeletePressed: (_ bypassConfirmation: Bool) -> Void
     var onEscapePressed: () -> Void
@@ -44,11 +53,21 @@ struct KeyboardEventHandlingView: NSViewRepresentable {
         override var acceptsFirstResponder: Bool { true }
 
         func claimFirstResponderIfAppropriate() {
-            guard let window, !(window.firstResponder is NSTextView) else { return }
+            guard let window else { return }
+            let isTextInput = window.firstResponder is NSTextView
+                || window.firstResponder is NSTextField
+            guard LibraryKeyboardFocusPolicy.shouldHandleLibraryKeys(
+                isVoiceOverRunning: NSWorkspace.shared.isVoiceOverEnabled,
+                isTextInputFirstResponder: isTextInput
+            ) else { return }
             window.makeFirstResponder(self)
         }
 
         override func keyDown(with event: NSEvent) {
+            guard !NSWorkspace.shared.isVoiceOverEnabled else {
+                super.keyDown(with: event)
+                return
+            }
             switch event.keyCode {
             case 51, 117: // 51: Delete, 117: Forward Delete
                 let bypass = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.shift)

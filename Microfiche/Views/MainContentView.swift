@@ -272,16 +272,32 @@ private struct FloatingViewModeControl: View {
 }
 
 private extension View {
-    @ViewBuilder
     func floatingViewModeGlass() -> some View {
-        if #available(macOS 26.0, *) {
-            self.glassEffect(.regular.interactive(), in: Capsule())
+        modifier(FloatingViewModeGlassModifier())
+    }
+}
+
+private struct FloatingViewModeGlassModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reduceTransparency || contrast == .increased {
+            content
+                .background(Color(NSColor.controlBackgroundColor), in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(Color(NSColor.separatorColor), lineWidth: 1)
+                }
+        } else if #available(macOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: Capsule())
         } else {
-            self
+            content
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay {
                     Capsule()
-                        .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
+                        .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
                 }
         }
     }
@@ -534,6 +550,7 @@ struct GridCell: View {
     let onAddToContactSheet: (UUID, URL) -> Void
     let onArchive: (ImageFile) -> Void
     @State private var isHovered = false
+    @AccessibilityFocusState private var isAccessibilityFocused: Bool
 
     var body: some View {
         FileThumbnailView(
@@ -545,7 +562,10 @@ struct GridCell: View {
             onRename: onRename
         )
         .frame(width: size, height: size / aspectRatio)
-        .contentSelectionChrome(isSelected: isSelected, isFocused: isFocused)
+        .contentSelectionChrome(
+            isSelected: isSelected,
+            isFocused: isFocused || isAccessibilityFocused
+        )
         .contentHoverDynamics(
             isHovered: isResizing ? false : isHovered,
             isSelected: isSelected
@@ -576,8 +596,11 @@ struct GridCell: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(file.name)
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityAddTraits(
+            isSelected ? [.isButton, .isSelected] : [.isButton]
+        )
         .accessibilityIdentifier("image.\(file.name)")
+        .accessibilityFocused($isAccessibilityFocused)
         .accessibilityAction(.default) {
             onSelectImage(file.id)
         }
@@ -641,6 +664,7 @@ struct ImageListView: View {
                 }
             }
         }
+        .accessibilityIdentifier("image.list")
     }
 }
 
@@ -658,6 +682,7 @@ struct ImageListRow: View {
     let onArchive: (ImageFile) -> Void
     @State private var isHovered = false
     @Environment(\.colorSchemeContrast) private var contrast
+    @AccessibilityFocusState private var isAccessibilityFocused: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -687,13 +712,17 @@ struct ImageListRow: View {
                 .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
         }
         .overlay {
-            if isSelected || isFocused {
+            if isSelected || isFocused || isAccessibilityFocused {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .strokeBorder(
                         Color.accentColor.opacity(
-                            contrast == .increased ? 1 : (isFocused ? 0.95 : 0.55)
+                            contrast == .increased
+                                ? 1
+                                : ((isFocused || isAccessibilityFocused) ? 0.95 : 0.55)
                         ),
-                        lineWidth: contrast == .increased ? 3 : (isFocused ? 2 : 1.5)
+                        lineWidth: contrast == .increased
+                            ? 3
+                            : ((isFocused || isAccessibilityFocused) ? 2 : 1.5)
                     )
             }
         }
@@ -717,8 +746,11 @@ struct ImageListRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(file.name)
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityAddTraits(
+            isSelected ? [.isButton, .isSelected] : [.isButton]
+        )
         .accessibilityIdentifier("image.\(file.name)")
+        .accessibilityFocused($isAccessibilityFocused)
         .accessibilityAction(.default) {
             onSelectImage(file.id)
         }

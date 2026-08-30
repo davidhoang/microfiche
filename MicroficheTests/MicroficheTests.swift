@@ -162,6 +162,25 @@ final class MicroficheTests: XCTestCase {
         XCTAssertNil(MicroficheMotion.panel(reducedMotion: true))
     }
 
+    func testLibraryKeyboardFocusPolicyYieldsToVoiceOverAndTextEditing() {
+        XCTAssertTrue(LibraryKeyboardFocusPolicy.shouldHandleLibraryKeys(
+            isVoiceOverRunning: false,
+            isTextInputFirstResponder: false
+        ))
+        XCTAssertFalse(LibraryKeyboardFocusPolicy.shouldHandleLibraryKeys(
+            isVoiceOverRunning: true,
+            isTextInputFirstResponder: false
+        ))
+        XCTAssertFalse(LibraryKeyboardFocusPolicy.shouldHandleLibraryKeys(
+            isVoiceOverRunning: false,
+            isTextInputFirstResponder: true
+        ))
+        XCTAssertFalse(LibraryKeyboardFocusPolicy.shouldHandleLibraryKeys(
+            isVoiceOverRunning: true,
+            isTextInputFirstResponder: true
+        ))
+    }
+
     func testIncreasedContrastStrengthensSelectionChrome() {
         XCTAssertGreaterThan(
             MicroficheContrast.selectionFillOpacity(increased: true),

@@ -15,6 +15,7 @@ struct ImageDetailView: View {
     let file: ImageFile
     @Binding var isMetadataPresented: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         extendedImageCanvas
@@ -71,7 +72,9 @@ struct ImageDetailView: View {
 
     @ViewBuilder
     private var extendedImageCanvas: some View {
-        if #available(macOS 26.0, *) {
+        if reduceTransparency {
+            imageCanvas
+        } else if #available(macOS 26.0, *) {
             imageCanvas.backgroundExtensionEffect()
         } else {
             imageCanvas
@@ -324,6 +327,7 @@ struct ImageMetadataInspectorView: View {
                         .foregroundStyle(.secondary)
                 }
                 .font(.caption)
+                .accessibilityIdentifier("inspector.technical.loading")
 
             case .available(let metadata):
                 VStack(alignment: .leading, spacing: 6) {
@@ -337,6 +341,7 @@ struct ImageMetadataInspectorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .italic()
+                    .accessibilityIdentifier("inspector.technical.empty")
 
             case .failed(let message):
                 VStack(alignment: .leading, spacing: 8) {
@@ -348,7 +353,9 @@ struct ImageMetadataInspectorView: View {
                         technicalMetadataReloadID = UUID()
                     }
                     .controlSize(.small)
+                    .accessibilityIdentifier("inspector.technical.retry")
                 }
+                .accessibilityIdentifier("inspector.technical.failed")
             }
         }
     }
@@ -403,6 +410,7 @@ struct ImageMetadataInspectorView: View {
                     TextEditor(text: draft)
                         .frame(minHeight: 88)
                         .accessibilityLabel(title)
+                        .accessibilityIdentifier("\(replaceIdentifier).editor")
                         .overlay {
                             RoundedRectangle(cornerRadius: 6)
                                 .strokeBorder(Color(NSColor.separatorColor))
@@ -411,6 +419,7 @@ struct ImageMetadataInspectorView: View {
                     TextField("Enter source", text: draft)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityLabel(title)
+                        .accessibilityIdentifier("\(replaceIdentifier).editor")
                         .onSubmit {
                             onReplace(draft.wrappedValue)
                             isEditing.wrappedValue = false
@@ -429,6 +438,7 @@ struct ImageMetadataInspectorView: View {
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
+                .accessibilityIdentifier("\(replaceIdentifier).cancel")
             } else {
                 Text(displayText(for: field, placeholder: placeholder))
                     .foregroundStyle(fieldDisplayIsPlaceholder(field) ? .secondary : .primary)
