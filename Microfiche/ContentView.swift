@@ -124,6 +124,11 @@ private struct ContactSheetExportPresentation: Identifiable {
     var id: UUID { contactSheet.id }
 }
 
+private struct AccessibilitySelectionSnapshot: Equatable {
+    let selectedIDs: Set<UUID>
+    let focusedID: UUID?
+}
+
 // MARK: - Content View
 
 struct ContentView: View {
@@ -270,6 +275,14 @@ struct ContentView: View {
                 .onChange(of: selectedTag) {
                     pruneSelectionToVisibleFiles()
                 }
+                .onChange(of: accessibilitySelectionSnapshot) {
+                    MicroficheAccessibility.announce(
+                        MicroficheAccessibility.selectionAnnouncement(
+                            selectedFiles: selectedImageFiles,
+                            focusedFile: focusedImageFile
+                        )
+                    )
+                }
                 .onChange(of: libraryStorage.linkedFolders) {
                     libraryIndex.configure(folders: libraryStorage.linkedFolders)
                     reloadSelectedLibraryLocation()
@@ -415,8 +428,14 @@ struct ContentView: View {
                     .zIndex(10)
                 }
         }
-        .animation(MicroficheMotion.snap, value: isQuickPreviewPresented)
-        .animation(MicroficheMotion.transition, value: userPreferences.isPresentingOnboarding)
+        .animation(
+            MicroficheMotion.snap(reducedMotion: reduceMotion),
+            value: isQuickPreviewPresented
+        )
+        .animation(
+            MicroficheMotion.transition(reducedMotion: reduceMotion),
+            value: userPreferences.isPresentingOnboarding
+        )
         .task {
             libraryIndex.configure(folders: libraryStorage.linkedFolders)
             if !ProcessInfo.processInfo.arguments.contains("--ui-testing") {
@@ -498,6 +517,7 @@ struct ContentView: View {
                 isResizingGrid: isResizingGrid,
                 gridColumnCount: $gridColumnCount,
                 selectedImageFileIDs: $selectedImageFileIDs,
+                focusedImageFileID: focusedImageFileID,
                 onSelectImage: handleImageSelection,
                 onDoubleClickImage: handleDoubleClickImage,
                 scrollToID: $scrollToID,
@@ -545,6 +565,7 @@ struct ContentView: View {
                         Image(systemName: "photo")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
 
                         Slider(
                             value: gridThumbnailSizeBinding,
@@ -558,6 +579,7 @@ struct ContentView: View {
                         Image(systemName: "photo.fill")
                             .font(.system(size: 15))
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                     }
                     .fixedSize()
                     .help("Thumbnail Size")
@@ -580,6 +602,11 @@ struct ContentView: View {
                 .disabled(selectedImageFileIDs.isEmpty)
                 .help(isMetadataInspectorPresented ? "Hide Info" : "Show Info")
                 .accessibilityLabel(isMetadataInspectorPresented ? "Hide inspector" : "Show inspector")
+                .accessibilityHint(
+                    selectedImageFileIDs.isEmpty
+                        ? "Select an image to inspect its metadata"
+                        : "Shows metadata for the selected images"
+                )
                 .accessibilityIdentifier("inspector.toggle")
             }
             .hideSharedBackgroundIfAvailable()
@@ -611,6 +638,13 @@ struct ContentView: View {
             return visible
         }
         return imageFiles.filter { selectedImageFileIDs.contains($0.id) }
+    }
+
+    private var accessibilitySelectionSnapshot: AccessibilitySelectionSnapshot {
+        AccessibilitySelectionSnapshot(
+            selectedIDs: selectedImageFileIDs,
+            focusedID: focusedImageFileID
+        )
     }
 
     private var focusedImageFile: ImageFile? {
@@ -648,6 +682,21 @@ struct ContentView: View {
         ImageMetadataStore.shared.allTags(for: imageFiles.map(\.url))
     }
 
+    private var filterAccessibilityValue: String {
+        var parts: [String] = []
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !query.isEmpty {
+            parts.append("Search \(query)")
+        }
+        if !selectedFileType.isEmpty {
+            parts.append("File type \(selectedFileType.uppercased())")
+        }
+        if !selectedTag.isEmpty {
+            parts.append("Tag \(selectedTag)")
+        }
+        return parts.isEmpty ? "No filters" : parts.joined(separator: ", ")
+    }
+
     private var filterMenu: some View {
         Menu {
             Picker("File Type", selection: $selectedFileType) {
@@ -676,7 +725,7 @@ struct ContentView: View {
         }
         .help("Filter Library")
         .accessibilityLabel("Filter library")
-        .accessibilityValue(hasActiveFilter ? "Filters active" : "No filters")
+        .accessibilityValue(filterAccessibilityValue)
         .accessibilityIdentifier("library.filter")
     }
 
@@ -875,7 +924,20 @@ struct ContentView: View {
         let supportedURLs = urls.filter {
             SupportedImageExtensions.contains($0)
         }
+        guard let sheet = contactSheetStorage.contactSheets.first(where: {
+            $0.id == sheetID
+        }) else { return }
+        let previousCount = sheet.imageIDs.count
         _ = contactSheetStorage.addImages(from: supportedURLs, to: sheetID)
+        let nextCount = contactSheetStorage.contactSheets.first(where: {
+            $0.id == sheetID
+        })?.imageIDs.count ?? previousCount
+        MicroficheAccessibility.announce(
+            MicroficheAccessibility.dropAnnouncement(
+                addedCount: max(0, nextCount - previousCount),
+                contactSheetName: sheet.name
+            )
+        )
 
         if selection == .contactSheet(sheetID) {
             imageFiles = contactSheetStorage.getImages(for: sheetID)

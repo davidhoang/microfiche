@@ -244,6 +244,94 @@ final class MicroficheUITests: XCTestCase {
     }
 
     @MainActor
+    func testAccessibleNamesValuesAndKeyboardFocusAcrossLibraryAndDetail() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let first = fixtureImage(1, in: app)
+        let second = fixtureImage(2, in: app)
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertEqual(first.label, "fixture-01.png")
+        XCTAssertEqual(first.value as? String, "Not selected")
+
+        app.typeKey(.rightArrow, modifierFlags: [])
+        XCTAssertTrue(first.isSelected)
+        XCTAssertEqual(first.value as? String, "Selected")
+        app.typeKey(.rightArrow, modifierFlags: [])
+        XCTAssertTrue(second.isSelected)
+        XCTAssertEqual(second.value as? String, "Selected")
+
+        second.doubleClick()
+        XCTAssertTrue(element("image.detail", in: app).waitForExistence(timeout: 2))
+        XCTAssertEqual(element("image.detail", in: app).label, "fixture-02.png")
+        XCTAssertTrue(
+            ["Hide inspector", "Show inspector"].contains(
+                element("detail.inspector.toggle", in: app).label
+            )
+        )
+        XCTAssertTrue(element("detail.share", in: app).exists)
+        XCTAssertEqual(
+            element("detail.more", in: app).label,
+            "More actions for fixture-02.png"
+        )
+    }
+
+    @MainActor
+    func testInspectorTextEditingKeepsKeyboardInputOutOfLibraryNavigation() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let first = fixtureImage(1, in: app)
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        first.click()
+        element("inspector.toggle", in: app).click()
+
+        let replace = element("inspector.replace-comments", in: app)
+        XCTAssertTrue(replace.waitForExistence(timeout: 2))
+
+        for attempt in 1...2 {
+            replace.click()
+            let editor = element("inspector.replace-comments.editor", in: app)
+            XCTAssertTrue(editor.waitForExistence(timeout: 2))
+            editor.click()
+            editor.typeText("Keyboard audit \(attempt)")
+            editor.typeKey(.rightArrow, modifierFlags: [])
+            XCTAssertTrue(first.isSelected)
+            element("inspector.replace-comments.cancel", in: app).click()
+            XCTAssertTrue(editor.waitForNonExistence(timeout: 2))
+        }
+    }
+
+    @MainActor
+    func testAccessibilityAppearancesSupportRepeatedTransitions() throws {
+        let app = configuredApp(additionalArguments: [
+            "--ui-testing-reduce-motion",
+            "--ui-testing-increased-contrast",
+            "--ui-testing-reduce-transparency"
+        ])
+        app.launch()
+
+        let first = fixtureImage(1, in: app)
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+
+        for _ in 0..<2 {
+            first.click()
+            XCTAssertTrue(first.isSelected)
+            app.typeKey(.space, modifierFlags: [])
+            XCTAssertTrue(element("preview.quick", in: app).waitForExistence(timeout: 2))
+            app.typeKey(.escape, modifierFlags: [])
+            XCTAssertTrue(element("preview.quick", in: app).waitForNonExistence(timeout: 2))
+            XCTAssertTrue(first.waitForExistence(timeout: 2))
+
+            element("viewMode.list", in: app).click()
+            XCTAssertTrue(element("viewMode.list", in: app).isSelected)
+            XCTAssertTrue(element("image.list", in: app).exists)
+            element("viewMode.grid", in: app).click()
+            XCTAssertTrue(element("viewMode.grid", in: app).isSelected)
+        }
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
             measure(metrics: [XCTApplicationLaunchMetric()]) {
@@ -253,7 +341,7 @@ final class MicroficheUITests: XCTestCase {
     }
 
     @MainActor
-    private func configuredApp() -> XCUIApplication {
+    private func configuredApp(additionalArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         let defaultsSuite = "MicroficheUITests.\(UUID().uuidString)"
         app.launchArguments = [
@@ -263,7 +351,7 @@ final class MicroficheUITests: XCTestCase {
             "--ui-testing",
             "--ui-testing-fixtures",
             "--ui-testing-defaults-suite", defaultsSuite
-        ]
+        ] + additionalArguments
         return app
     }
 

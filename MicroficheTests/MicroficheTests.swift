@@ -151,6 +151,111 @@ final class MicroficheTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(GridThumbnailSizing.decodeSize, GridThumbnailSizing.defaultValue)
     }
 
+    func testReducedMotionDisablesEverySharedAnimationToken() {
+        XCTAssertTrue(MicroficheMotion.isEnabled(reducedMotion: false))
+        XCTAssertFalse(MicroficheMotion.isEnabled(reducedMotion: true))
+        XCTAssertNotNil(MicroficheMotion.snap(reducedMotion: false))
+        XCTAssertNotNil(MicroficheMotion.transition(reducedMotion: false))
+        XCTAssertNotNil(MicroficheMotion.panel(reducedMotion: false))
+        XCTAssertNil(MicroficheMotion.snap(reducedMotion: true))
+        XCTAssertNil(MicroficheMotion.transition(reducedMotion: true))
+        XCTAssertNil(MicroficheMotion.panel(reducedMotion: true))
+    }
+
+    func testLibraryKeyboardFocusPolicyYieldsToVoiceOverAndTextEditing() {
+        XCTAssertTrue(LibraryKeyboardFocusPolicy.shouldHandleLibraryKeys(
+            isVoiceOverRunning: false,
+            isTextInputFirstResponder: false
+        ))
+        XCTAssertFalse(LibraryKeyboardFocusPolicy.shouldHandleLibraryKeys(
+            isVoiceOverRunning: true,
+            isTextInputFirstResponder: false
+        ))
+        XCTAssertFalse(LibraryKeyboardFocusPolicy.shouldHandleLibraryKeys(
+            isVoiceOverRunning: false,
+            isTextInputFirstResponder: true
+        ))
+        XCTAssertFalse(LibraryKeyboardFocusPolicy.shouldHandleLibraryKeys(
+            isVoiceOverRunning: true,
+            isTextInputFirstResponder: true
+        ))
+    }
+
+    func testIncreasedContrastStrengthensSelectionChrome() {
+        XCTAssertGreaterThan(
+            MicroficheContrast.selectionFillOpacity(increased: true),
+            MicroficheContrast.selectionFillOpacity(increased: false)
+        )
+        XCTAssertGreaterThan(
+            MicroficheContrast.selectionStrokeOpacity(increased: true),
+            MicroficheContrast.selectionStrokeOpacity(increased: false)
+        )
+        XCTAssertGreaterThan(
+            MicroficheContrast.selectionStrokeWidth(increased: true),
+            MicroficheContrast.selectionStrokeWidth(increased: false)
+        )
+    }
+
+    func testAccessibilityAnnouncementsCoverSelectionLoadingAndDropOutcomes() {
+        let first = ImageFile(url: URL(fileURLWithPath: "/Photos/first.jpg"))
+        let second = ImageFile(url: URL(fileURLWithPath: "/Photos/second.jpg"))
+
+        XCTAssertEqual(
+            MicroficheAccessibility.selectionAnnouncement(
+                selectedFiles: [],
+                focusedFile: nil
+            ),
+            "No images selected"
+        )
+        XCTAssertEqual(
+            MicroficheAccessibility.selectionAnnouncement(
+                selectedFiles: [first],
+                focusedFile: first
+            ),
+            "first.jpg selected"
+        )
+        XCTAssertEqual(
+            MicroficheAccessibility.selectionAnnouncement(
+                selectedFiles: [first, second],
+                focusedFile: second
+            ),
+            "2 images selected, second.jpg focused"
+        )
+        XCTAssertEqual(
+            MicroficheAccessibility.dropAnnouncement(
+                addedCount: 0,
+                contactSheetName: "Review"
+            ),
+            "No new images added to Review"
+        )
+        XCTAssertEqual(
+            MicroficheAccessibility.dropAnnouncement(
+                addedCount: 2,
+                contactSheetName: "Review"
+            ),
+            "2 images added to Review"
+        )
+        XCTAssertEqual(
+            MicroficheAccessibility.imageLoadAnnouncement(
+                phase: .failed("Network unavailable"),
+                fileName: "first.jpg"
+            ),
+            "first.jpg unavailable. Network unavailable"
+        )
+        XCTAssertNil(
+            MicroficheAccessibility.imageLoadAnnouncement(
+                phase: .loaded,
+                fileName: "first.jpg"
+            )
+        )
+        XCTAssertNil(
+            MicroficheAccessibility.imageLoadAnnouncement(
+                phase: .idle,
+                fileName: "first.jpg"
+            )
+        )
+    }
+
     func testGridNavigationMovesByCurrentColumnCount() {
         XCTAssertEqual(
             ImageNavigation.nextIndex(

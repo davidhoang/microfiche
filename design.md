@@ -226,6 +226,4 @@ Disable animations while the grid size slider is dragging. Prefer `MicroficheMot
 
 ## Future Enhancements
 
-- Propagate Reduce Motion to all `MicroficheMotion` call sites
-- Keyboard focus ring that matches selection chrome
 - Retire or wire unused helpers (`microficheToolbarChrome`, `sidebarSelectionBackground`) deliberately

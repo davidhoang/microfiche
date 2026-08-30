@@ -36,5 +36,13 @@ struct PreviewView: View {
                 .frame(width: geometry.size.width * 0.75, height: geometry.size.height * 0.75)
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityLabel("Quick preview of \(file.name)")
+        .accessibilityHint("Press Escape to close")
+        .accessibilityIdentifier("preview.quick")
+        .accessibilityAction(named: "Close Preview") {
+            onDismiss()
+        }
     }
 }

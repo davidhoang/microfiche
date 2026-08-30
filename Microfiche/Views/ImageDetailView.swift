@@ -14,6 +14,8 @@ import SwiftUI
 struct ImageDetailView: View {
     let file: ImageFile
     @Binding var isMetadataPresented: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         extendedImageCanvas
@@ -32,15 +34,23 @@ struct ImageDetailView: View {
 
                 ToolbarItemGroup {
                     Button {
-                        isMetadataPresented.toggle()
+                        withAnimation(MicroficheMotion.panel(reducedMotion: reduceMotion)) {
+                            isMetadataPresented.toggle()
+                        }
                     } label: {
                         Image(systemName: "sidebar.right")
                     }
                     .help(isMetadataPresented ? "Hide Info" : "Show Info")
+                    .accessibilityLabel(
+                        isMetadataPresented ? "Hide inspector" : "Show inspector"
+                    )
+                    .accessibilityIdentifier("detail.inspector.toggle")
 
                     ShareLink(item: file.url) {
                         Image(systemName: "square.and.arrow.up")
                     }
+                    .accessibilityLabel("Share \(file.name)")
+                    .accessibilityIdentifier("detail.share")
 
                     Menu {
                         Button("Reveal in Finder") {
@@ -54,13 +64,17 @@ struct ImageDetailView: View {
                         Image(systemName: "ellipsis")
                     }
                     .help("More")
+                    .accessibilityLabel("More actions for \(file.name)")
+                    .accessibilityIdentifier("detail.more")
                 }
             }
     }
 
     @ViewBuilder
     private var extendedImageCanvas: some View {
-        if #available(macOS 26.0, *) {
+        if reduceTransparency {
+            imageCanvas
+        } else if #available(macOS 26.0, *) {
             imageCanvas.backgroundExtensionEffect()
         } else {
             imageCanvas
@@ -85,6 +99,7 @@ struct ImageDetailView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(28)
         }
+        .accessibilityLabel(file.name)
         .accessibilityIdentifier("image.detail")
     }
 
@@ -230,6 +245,10 @@ struct ImageMetadataInspectorView: View {
                 _ = await writer.apply(.replaceWhereFrom(sourceToSave), to: urls)
             }
         }
+        .onChange(of: saveError) { _, error in
+            guard let error else { return }
+            MicroficheAccessibility.announce(error, priority: .high)
+        }
         .microficheInspectorContentChrome()
         .accessibilityIdentifier("inspector.content")
     }
@@ -308,6 +327,7 @@ struct ImageMetadataInspectorView: View {
                         .foregroundStyle(.secondary)
                 }
                 .font(.caption)
+                .accessibilityIdentifier("inspector.technical.loading")
 
             case .available(let metadata):
                 VStack(alignment: .leading, spacing: 6) {
@@ -321,6 +341,7 @@ struct ImageMetadataInspectorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .italic()
+                    .accessibilityIdentifier("inspector.technical.empty")
 
             case .failed(let message):
                 VStack(alignment: .leading, spacing: 8) {
@@ -332,7 +353,9 @@ struct ImageMetadataInspectorView: View {
                         technicalMetadataReloadID = UUID()
                     }
                     .controlSize(.small)
+                    .accessibilityIdentifier("inspector.technical.retry")
                 }
+                .accessibilityIdentifier("inspector.technical.failed")
             }
         }
     }
@@ -376,6 +399,9 @@ struct ImageMetadataInspectorView: View {
                 .buttonStyle(.borderless)
                 .disabled(isSaving)
                 .help(isEditing.wrappedValue ? "Replace \(title)" : "Replace \(title)")
+                .accessibilityLabel(
+                    isEditing.wrappedValue ? "Apply \(title)" : "Edit \(title)"
+                )
                 .accessibilityIdentifier(replaceIdentifier)
             }
 
@@ -383,6 +409,8 @@ struct ImageMetadataInspectorView: View {
                 if isMultiline {
                     TextEditor(text: draft)
                         .frame(minHeight: 88)
+                        .accessibilityLabel(title)
+                        .accessibilityIdentifier("\(replaceIdentifier).editor")
                         .overlay {
                             RoundedRectangle(cornerRadius: 6)
                                 .strokeBorder(Color(NSColor.separatorColor))
@@ -390,6 +418,8 @@ struct ImageMetadataInspectorView: View {
                 } else {
                     TextField("Enter source", text: draft)
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel(title)
+                        .accessibilityIdentifier("\(replaceIdentifier).editor")
                         .onSubmit {
                             onReplace(draft.wrappedValue)
                             isEditing.wrappedValue = false
@@ -408,6 +438,7 @@ struct ImageMetadataInspectorView: View {
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
+                .accessibilityIdentifier("\(replaceIdentifier).cancel")
             } else {
                 Text(displayText(for: field, placeholder: placeholder))
                     .foregroundStyle(fieldDisplayIsPlaceholder(field) ? .secondary : .primary)
@@ -640,6 +671,7 @@ struct EditableChipSection: View {
                 }
                 .buttonStyle(.borderless)
                 .help(isEditing ? "Done" : "Add \(itemName)")
+                .accessibilityLabel(isEditing ? "Finish editing \(title)" : "Add \(itemName)")
             }
 
             if isEditing {
@@ -734,5 +766,8 @@ struct InfoRow: View {
                 .textSelection(.enabled)
             Spacer(minLength: 0)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
     }
 }

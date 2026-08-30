@@ -23,6 +23,27 @@ struct MicroficheApp: App {
                     minWidth: WindowLayout.minimumWidth,
                     minHeight: WindowLayout.minimumHeight
                 )
+                .transformEnvironment(\.accessibilityReduceMotion) { reduceMotion in
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-testing-reduce-motion") {
+                        reduceMotion = true
+                    }
+                    #endif
+                }
+                .transformEnvironment(\.colorSchemeContrast) { contrast in
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-testing-increased-contrast") {
+                        contrast = .increased
+                    }
+                    #endif
+                }
+                .transformEnvironment(\.accessibilityReduceTransparency) { reduceTransparency in
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-testing-reduce-transparency") {
+                        reduceTransparency = true
+                    }
+                    #endif
+                }
         }
         .defaultSize(width: WindowLayout.defaultWidth, height: WindowLayout.defaultHeight)
         .defaultPosition(.center)
