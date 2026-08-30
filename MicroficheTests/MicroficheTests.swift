@@ -632,6 +632,96 @@ final class MicroficheTests: XCTestCase {
         XCTAssertEqual(folder.displayName, "Photos")
     }
 
+    func testImageLoadStateCoversPlaceholderLoadingFailureCancellationAndRetry() {
+        var state = ImageLoadState()
+        state.observe(.notDownloaded)
+        XCTAssertEqual(state.phase, .placeholder)
+
+        let download = state.begin(for: .notDownloaded)
+        XCTAssertEqual(state.phase, .downloading)
+        XCTAssertTrue(state.finish(.success(()), requestID: download))
+        XCTAssertEqual(state.phase, .loaded)
+
+        let failed = state.begin(for: .local)
+        XCTAssertEqual(state.phase, .loading)
+        XCTAssertTrue(state.finish(
+            .failure(ICloudItemDownloadError.unavailable("Network unavailable")),
+            requestID: failed
+        ))
+        XCTAssertEqual(state.phase, .failed("Network unavailable"))
+
+        let retry = state.begin(for: .downloading)
+        XCTAssertEqual(state.phase, .downloading)
+        XCTAssertTrue(state.cancel(requestID: retry))
+        XCTAssertEqual(state.phase, .cancelled)
+        XCTAssertFalse(state.cancel(requestID: retry))
+
+        let finalRetry = state.begin(for: .current)
+        XCTAssertFalse(state.finish(.success(()), requestID: failed))
+        XCTAssertTrue(state.finish(.success(()), requestID: finalRetry))
+        XCTAssertEqual(state.phase, .loaded)
+    }
+
+    func testICloudDownloadCoordinatorHandlesSuccessFailureTimeoutAndCancellation() async throws {
+        let url = URL(fileURLWithPath: "/tmp/microfiche-icloud-fixture.jpg")
+        let successDownloader = StubICloudItemDownloader(states: [
+            .notDownloaded, .downloading, .current
+        ])
+        let success = ICloudItemDownloadCoordinator(
+            downloader: successDownloader,
+            maxPollAttempts: 4,
+            pollInterval: .zero,
+            sleep: { _ in }
+        )
+        try await success.prepareForReading(url)
+        try await success.prepareForReading(url)
+        XCTAssertEqual(successDownloader.requestCount, 1)
+
+        let failed = ICloudItemDownloadCoordinator(
+            downloader: StubICloudItemDownloader(states: [
+                .notDownloaded, .failed("iCloud is unavailable")
+            ]),
+            maxPollAttempts: 2,
+            pollInterval: .zero,
+            sleep: { _ in }
+        )
+        do {
+            try await failed.prepareForReading(url)
+            XCTFail("Expected an iCloud failure")
+        } catch {
+            XCTAssertEqual(
+                error as? ICloudItemDownloadError,
+                .unavailable("iCloud is unavailable")
+            )
+        }
+
+        let timedOut = ICloudItemDownloadCoordinator(
+            downloader: StubICloudItemDownloader(states: [.notDownloaded]),
+            maxPollAttempts: 2,
+            pollInterval: .zero,
+            sleep: { _ in }
+        )
+        do {
+            try await timedOut.prepareForReading(url)
+            XCTFail("Expected an iCloud timeout")
+        } catch {
+            XCTAssertEqual(error as? ICloudItemDownloadError, .timedOut)
+        }
+
+        let cancelled = ICloudItemDownloadCoordinator(
+            downloader: StubICloudItemDownloader(states: [.notDownloaded]),
+            maxPollAttempts: 2,
+            pollInterval: .zero,
+            sleep: { _ in throw CancellationError() }
+        )
+        do {
+            try await cancelled.prepareForReading(url)
+            XCTFail("Expected cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+    }
+
     func testDroppedImagePersistsWhenContactSheetStorageReloads() throws {
         let fileManager = FileManager.default
         let testDirectory = fileManager.temporaryDirectory
@@ -1439,4 +1529,27 @@ final class MicroficheTests: XCTestCase {
         XCTAssertNil(restored.resolvedURL())
     }
 
+}
+
+private final class StubICloudItemDownloader: ICloudItemDownloading, @unchecked Sendable {
+    private let lock = NSLock()
+    private var states: [ICloudItemState]
+    private(set) var requestCount = 0
+
+    init(states: [ICloudItemState]) {
+        self.states = states
+    }
+
+    func state(for url: URL) -> ICloudItemState {
+        lock.withLock {
+            guard states.count > 1 else { return states.first ?? .local }
+            return states.removeFirst()
+        }
+    }
+
+    func requestDownload(for url: URL) throws {
+        lock.withLock {
+            requestCount += 1
+        }
+    }
 }

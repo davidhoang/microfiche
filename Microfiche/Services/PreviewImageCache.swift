@@ -36,6 +36,32 @@ final class PreviewImageCache {
         cache.object(forKey: url as NSURL)
     }
 
+    func image(
+        for url: URL,
+        priority: DispatchQoS.QoSClass = .userInitiated
+    ) async throws -> NSImage {
+        if let cached = getImage(for: url) {
+            return cached
+        }
+
+        try await ICloudItemDownloadCoordinator.shared.prepareForReading(url)
+        try Task.checkCancellation()
+
+        let image: NSImage = try await withCheckedThrowingContinuation { continuation in
+            enqueueImageLoad(for: url, priority: priority) { image in
+                if let image {
+                    continuation.resume(returning: image)
+                } else {
+                    continuation.resume(
+                        throwing: PreviewImageLoadError.unreadable(url.lastPathComponent)
+                    )
+                }
+            }
+        }
+        try Task.checkCancellation()
+        return image
+    }
+
     func preloadImage(
         for url: URL,
         priority: DispatchQoS.QoSClass = .userInitiated,
