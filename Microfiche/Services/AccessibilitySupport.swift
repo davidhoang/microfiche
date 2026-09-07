@@ -66,7 +66,7 @@ enum MicroficheAccessibility {
         if let window = NSApp.mainWindow ?? NSApp.keyWindow {
             element = window
         } else {
-            element = NSApp
+            element = NSApp as Any
         }
         NSAccessibility.post(
             element: element,

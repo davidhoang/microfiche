@@ -779,6 +779,10 @@ private extension View {
                 }
             }
 
+            Button("Open in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([file.url])
+            }
+
             Button("Move to Archive") {
                 onArchive(file)
             }

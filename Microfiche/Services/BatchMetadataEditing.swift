@@ -147,8 +147,9 @@ struct BatchMetadataWriter {
     var beforeSave: ((URL) -> Void)? = nil
     var isCancelled: () -> Bool = { Task.isCancelled }
 
-    static func live(store: ImageMetadataStore = .shared) -> BatchMetadataWriter {
-        BatchMetadataWriter(
+    static func live(store: ImageMetadataStore? = nil) -> BatchMetadataWriter {
+        let store = store ?? .shared
+        return BatchMetadataWriter(
             loadResolved: { url in
                 BatchMetadataAggregation.resolved(
                     native: NativeFileMetadataService.load(from: url),
