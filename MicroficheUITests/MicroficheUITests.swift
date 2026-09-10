@@ -106,10 +106,14 @@ final class MicroficheUITests: XCTestCase {
         second.click()
         XCTAssertTrue(second.isSelected)
 
-        third.click(forDuration: 0, modifierFlags: .command)
+        XCUIElement.perform(withKeyModifiers: .command) {
+            third.click()
+        }
         XCTAssertTrue(second.isSelected)
         XCTAssertTrue(third.isSelected)
-        fifth.click(forDuration: 0, modifierFlags: .shift)
+        XCUIElement.perform(withKeyModifiers: .shift) {
+            fifth.click()
+        }
         XCTAssertTrue(third.isSelected)
         XCTAssertTrue(fixtureImage(4, in: app).isSelected)
         XCTAssertTrue(fifth.isSelected)

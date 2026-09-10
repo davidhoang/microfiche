@@ -245,9 +245,8 @@ struct ContentView: View {
         liveGridThumbnailSize ?? gridThumbnailSize
     }
 
-    var body: some View {
-        ZStack {
-            libraryContainer
+    private var observedLibrary: some View {
+        libraryContainer
                 .onChange(of: selection) { _, newValue in
                     switch newValue {
                     case .all:
@@ -352,6 +351,10 @@ struct ContentView: View {
                         handleArrowKey(direction)
                     }
                 ))
+    }
+
+    private var libraryContent: some View {
+        observedLibrary
                 .alert("Move to Trash?", isPresented: $showDeleteAlert) {
                     Button("Move to Trash", role: .destructive) {
                         moveFilesToTrash(pendingDeleteFiles)
@@ -409,8 +412,13 @@ struct ContentView: View {
                 } message: {
                     Text(archiveErrorMessage ?? "")
                 }
+    }
 
-                if isQuickPreviewPresented, let file = focusedImageFile {
+    var body: some View {
+        ZStack {
+            libraryContent
+
+            if isQuickPreviewPresented, let file = focusedImageFile {
                     PreviewView(file: file) {
                         dismissQuickPreview()
                     }
