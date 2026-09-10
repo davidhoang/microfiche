@@ -1,0 +1,6 @@
+# GitHub-hosted runner labels that are newer than actionlint's built-in list.
+# macos-26 is a valid GitHub-hosted image (ships Xcode 26.x); declaring it here
+# stops actionlint from reporting it as an unknown label.
+self-hosted-runner:
+  labels:
+    - macos-26

@@ -12,7 +12,10 @@ concurrency:
 jobs:
   build-and-test:
     name: Build and test (macOS)
-    runs-on: macos-15
+    # Xcode 26 (macOS 26 SDK) is required: the app uses Liquid Glass APIs
+    # (.glassEffect, .buttonStyle(.glass), sharedBackgroundVisibility) and
+    # macOS 26-gated resource writes. macos-26 ships Xcode 26.x by default.
+    runs-on: macos-26
 
     env:
       PROJECT: Microfiche.xcodeproj
