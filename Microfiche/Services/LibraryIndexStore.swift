@@ -372,6 +372,14 @@ final class LibraryIndexStore: ObservableObject {
     ) {
         let normalizedEntries = entries.sorted { $0.path < $1.path }
         let existing = slices[folderID]
+
+        // Only a change in the indexed entries is a meaningful update. A fresh
+        // scan timestamp on its own must not replace state or bump the revision,
+        // otherwise every no-op reconcile would needlessly invalidate observers.
+        if let existing, existing.entries == normalizedEntries {
+            return
+        }
+
         let next = FolderSlice(
             folderID: folderID,
             entries: normalizedEntries,
