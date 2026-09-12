@@ -44,7 +44,7 @@ enum ImageCellEventRouting {
     static func coveringAccessibilityIdentifier(from view: NSView?) -> String? {
         var node = view
         while let current = node {
-            let identifier = current.accessibilityIdentifier
+            let identifier = current.accessibilityIdentifier()
             if !identifier.isEmpty {
                 return identifier
             }
@@ -313,13 +313,15 @@ private struct FloatingViewModeControl: View {
         .padding(3)
         .floatingViewModeGlass()
         .overlay {
-            if contrast == .increased {
+            if contrast == .increased || UITestHost.increasedContrast {
                 Capsule()
                     .strokeBorder(Color.primary, lineWidth: 1)
             }
         }
         .shadow(
-            color: contrast == .increased ? .clear : Color.black.opacity(0.08),
+            color: (contrast == .increased || UITestHost.increasedContrast)
+                ? .clear
+                : Color.black.opacity(0.08),
             radius: 6,
             y: 2
         )
@@ -340,7 +342,10 @@ private struct FloatingViewModeGlassModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if reduceTransparency || contrast == .increased {
+        if reduceTransparency
+            || UITestHost.reduceTransparency
+            || contrast == .increased
+            || UITestHost.increasedContrast {
             content
                 .background(Color(NSColor.controlBackgroundColor), in: Capsule())
                 .overlay {

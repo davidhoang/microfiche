@@ -456,7 +456,6 @@ struct ContentView: View {
         .onAppear {
             UITestHost.applyWindowLayoutIfNeeded()
         }
-        .applyingUITestAccessibilityOverrides()
         .sheet(item: $contactSheetExportPresentation) { presentation in
             ContactSheetExportView(
                 contactSheet: presentation.contactSheet,

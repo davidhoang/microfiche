@@ -8,7 +8,6 @@
 
 import AppKit
 import Foundation
-import SwiftUI
 
 enum UITestHost {
     static var isLaunchedForUITesting: Bool {
@@ -39,26 +38,6 @@ enum UITestHost {
         for window in NSApplication.shared.windows where window.isVisible {
             window.setContentSize(size)
             window.center()
-        }
-    }
-}
-
-extension View {
-    func applyingUITestAccessibilityOverrides() -> some View {
-        transformEnvironment(\.accessibilityReduceMotion) { value in
-            if UITestHost.reduceMotion {
-                value = true
-            }
-        }
-        .transformEnvironment(\.colorSchemeContrast) { value in
-            if UITestHost.increasedContrast {
-                value = .increased
-            }
-        }
-        .transformEnvironment(\.accessibilityReduceTransparency) { value in
-            if UITestHost.reduceTransparency {
-                value = true
-            }
         }
     }
 }
