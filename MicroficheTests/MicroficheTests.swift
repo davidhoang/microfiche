@@ -338,6 +338,233 @@ final class MicroficheTests: XCTestCase {
         XCTAssertEqual(repeatedDoubleClickActions.filter { $0 == .select }.count, 4)
     }
 
+    func testImageCellEventRoutingIgnoresClicksOnCoveringLibraryChrome() {
+        let bounds = CGRect(x: 0, y: 0, width: 120, height: 80)
+        XCTAssertFalse(
+            ImageCellEventRouting.shouldSelectCell(
+                locationInView: CGPoint(x: -1, y: 10),
+                viewBounds: bounds,
+                coveringAccessibilityIdentifier: nil
+            )
+        )
+        XCTAssertTrue(
+            ImageCellEventRouting.shouldSelectCell(
+                locationInView: CGPoint(x: 10, y: 10),
+                viewBounds: bounds,
+                coveringAccessibilityIdentifier: nil
+            )
+        )
+        XCTAssertTrue(
+            ImageCellEventRouting.shouldSelectCell(
+                locationInView: CGPoint(x: 10, y: 10),
+                viewBounds: bounds,
+                coveringAccessibilityIdentifier: "image.fixture-01.png"
+            )
+        )
+        XCTAssertFalse(
+            ImageCellEventRouting.shouldSelectCell(
+                locationInView: CGPoint(x: 10, y: 10),
+                viewBounds: bounds,
+                coveringAccessibilityIdentifier: "viewMode.list"
+            )
+        )
+        XCTAssertFalse(
+            ImageCellEventRouting.shouldSelectCell(
+                locationInView: CGPoint(x: 10, y: 10),
+                viewBounds: bounds,
+                coveringAccessibilityIdentifier: "inspector.toggle"
+            )
+        )
+        XCTAssertFalse(
+            ImageCellEventRouting.shouldSelectCell(
+                locationInView: CGPoint(x: 10, y: 10),
+                viewBounds: bounds,
+                coveringAccessibilityIdentifier: "library.filter"
+            )
+        )
+        XCTAssertFalse(
+            ImageCellEventRouting.shouldSelectCell(
+                locationInView: CGPoint(x: 10, y: 10),
+                viewBounds: bounds,
+                coveringAccessibilityIdentifier: nil,
+                coveringIsAppKitButton: true
+            )
+        )
+    }
+
+    func testLibrarySelectionTransitionCoversPointerKeyboardAndRemovalMatrixTwice() {
+        let displayed = (1...8).map { index in
+            UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index))!
+        }
+        let first = displayed[0]
+        let second = displayed[1]
+        let third = displayed[2]
+        let fourth = displayed[3]
+        let fifth = displayed[4]
+        let empty = LibrarySelectionState(selectedIDs: [], focusedID: nil)
+
+        for _ in 1...2 {
+            var state = empty
+            XCTAssertTrue(state.selectedIDs.isEmpty)
+
+            state = LibrarySelectionTransition.applyingPointerClick(
+                fileID: first,
+                displayedIDs: displayed,
+                state: state,
+                modifier: .none
+            )
+            XCTAssertEqual(state.selectedIDs, [first])
+            XCTAssertEqual(state.focusedID, first)
+
+            state = LibrarySelectionTransition.applyingPointerClick(
+                fileID: second,
+                displayedIDs: displayed,
+                state: state,
+                modifier: .none
+            )
+            XCTAssertEqual(state.selectedIDs, [second])
+            XCTAssertEqual(state.focusedID, second)
+
+            state = LibrarySelectionTransition.applyingPointerClick(
+                fileID: second,
+                displayedIDs: displayed,
+                state: state,
+                modifier: .none
+            )
+            XCTAssertEqual(state.selectedIDs, [second])
+            XCTAssertEqual(state.focusedID, second)
+
+            for _ in 0..<5 {
+                state = LibrarySelectionTransition.applyingPointerClick(
+                    fileID: first,
+                    displayedIDs: displayed,
+                    state: state,
+                    modifier: .none
+                )
+            }
+            XCTAssertEqual(state.selectedIDs, [first])
+            XCTAssertEqual(state.focusedID, first)
+
+            state = LibrarySelectionTransition.applyingPointerClick(
+                fileID: third,
+                displayedIDs: displayed,
+                state: state,
+                modifier: .command
+            )
+            XCTAssertEqual(state.selectedIDs, [first, third])
+            XCTAssertEqual(state.focusedID, third)
+
+            state = LibrarySelectionTransition.applyingPointerClick(
+                fileID: third,
+                displayedIDs: displayed,
+                state: state,
+                modifier: .command
+            )
+            XCTAssertEqual(state.selectedIDs, [first])
+            XCTAssertEqual(state.focusedID, first)
+
+            state = LibrarySelectionTransition.applyingPointerClick(
+                fileID: fifth,
+                displayedIDs: displayed,
+                state: state,
+                modifier: .shift
+            )
+            XCTAssertEqual(state.selectedIDs, Set(displayed[0...4]))
+            XCTAssertEqual(state.focusedID, fifth)
+
+            state = LibrarySelectionTransition.applyingKeyboardMove(
+                nextFileID: second,
+                selectedIDs: state.selectedIDs,
+                extendSelection: false
+            )
+            XCTAssertEqual(state.selectedIDs, [second])
+            XCTAssertEqual(state.focusedID, second)
+
+            state = LibrarySelectionTransition.applyingKeyboardMove(
+                nextFileID: third,
+                selectedIDs: state.selectedIDs,
+                extendSelection: true
+            )
+            XCTAssertEqual(state.selectedIDs, [second, third])
+            XCTAssertEqual(state.focusedID, third)
+
+            state = LibrarySelectionTransition.applyingKeyboardMove(
+                nextFileID: fourth,
+                selectedIDs: state.selectedIDs,
+                extendSelection: false
+            )
+            XCTAssertEqual(state.selectedIDs, [fourth])
+
+            state = LibrarySelectionTransition.openingDetail(fileID: fifth)
+            XCTAssertEqual(state.selectedIDs, [fifth])
+            XCTAssertEqual(state.focusedID, fifth)
+
+            state = LibrarySelectionTransition.clearingSelection()
+            XCTAssertTrue(state.selectedIDs.isEmpty)
+            XCTAssertNil(state.focusedID)
+
+            state = LibrarySelectionTransition.selectingFirstAvailable(
+                displayedIDs: displayed
+            )
+            XCTAssertEqual(state, LibrarySelectionState(selectedIDs: [first], focusedID: first))
+        }
+
+        XCTAssertEqual(
+            LibrarySelectionTransition.selectingFirstAvailable(displayedIDs: []),
+            empty
+        )
+        XCTAssertEqual(
+            LibrarySelectionTransition.applyingPointerClick(
+                fileID: third,
+                displayedIDs: displayed,
+                state: empty,
+                modifier: .shift
+            ),
+            LibrarySelectionState(selectedIDs: [third], focusedID: third)
+        )
+
+        var lastItem = LibrarySelectionState(selectedIDs: [first], focusedID: first)
+        lastItem = LibrarySelectionTransition.applyingPointerClick(
+            fileID: first,
+            displayedIDs: displayed,
+            state: lastItem,
+            modifier: .command
+        )
+        XCTAssertTrue(lastItem.selectedIDs.isEmpty)
+        XCTAssertNil(lastItem.focusedID)
+    }
+
+    #if DEBUG
+    @MainActor
+    func testUITestFixtureSeedsTwentyImagesTwoContactSheetsAndIsolatedDefaults() throws {
+        let fixture = UITestFixture.make()
+        let folder = try XCTUnwrap(fixture.libraryStorage.linkedFolders.first)
+        let photos = try XCTUnwrap(folder.resolvedURL)
+        let names = try FileManager.default
+            .contentsOfDirectory(at: photos, includingPropertiesForKeys: nil)
+            .map(\.lastPathComponent)
+            .filter { $0.hasSuffix(".png") }
+            .sorted()
+
+        XCTAssertEqual(names.count, 24)
+        XCTAssertEqual(names.first, "fixture-01.png")
+        XCTAssertEqual(names.last, "fixture-24.png")
+        XCTAssertEqual(
+            fixture.contactSheetStorage.contactSheets.map(\.name).sorted(),
+            ["First Review", "Second Review"]
+        )
+        XCTAssertEqual(
+            fixture.contactSheetStorage.contactSheets.map(\.imageIDs.count).sorted(),
+            [4, 4]
+        )
+        XCTAssertFalse(fixture.userPreferences.isOnboardingEnabled)
+        XCTAssertTrue(fixture.userPreferences.hasCompletedOnboarding)
+        XCTAssertTrue(
+            fixture.userPreferences.defaultsStore !== UserDefaults.standard
+        )
+    }
+    #endif
+
     @MainActor
     func testLibraryStorageRestoresLinkedFolderFromBookmark() throws {
         let root = FileManager.default.temporaryDirectory

@@ -272,6 +272,8 @@ struct ImageMetadataInspectorView: View {
                     .lineLimit(2)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("inspector.current-file")
+                    .accessibilityLabel(file.name)
+                    .accessibilityValue(file.name)
 
                 Text(file.url.deletingLastPathComponent().path)
                     .font(.caption)
@@ -395,8 +397,13 @@ struct ImageMetadataInspectorView: View {
                     }
                 } label: {
                     Image(systemName: isEditing.wrappedValue ? "checkmark" : (isBatch ? "square.and.pencil" : "pencil"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
+                .frame(minWidth: 44, minHeight: 28)
+                .contentShape(Rectangle())
                 .disabled(isSaving)
                 .help(isEditing.wrappedValue ? "Replace \(title)" : "Replace \(title)")
                 .accessibilityLabel(

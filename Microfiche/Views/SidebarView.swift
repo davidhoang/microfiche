@@ -512,7 +512,7 @@ struct ContactSheetSidebarItem: View {
         .accessibilityAddTraits(
             isSelected ? [.isButton, .isSelected] : [.isButton]
         )
-        .accessibilityIdentifier("contact-sheet-\(contactSheet.id.uuidString)-drop-target")
+        .accessibilityIdentifier("sidebar.contact-sheet.\(contactSheet.name)")
         .accessibilityLabel(contactSheet.name)
         .accessibilityHint("\(contactSheet.imageIDs.count) images. Accepts image drops.")
         .accessibilityAction(.default) {

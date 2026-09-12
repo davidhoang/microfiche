@@ -20,6 +20,51 @@ enum ImageCellInteraction {
     }
 }
 
+enum ImageCellEventRouting {
+    static func shouldSelectCell(
+        locationInView: CGPoint,
+        viewBounds: CGRect,
+        coveringAccessibilityIdentifier: String?,
+        coveringIsAppKitButton: Bool = false
+    ) -> Bool {
+        guard viewBounds.contains(locationInView) else { return false }
+        if coveringIsAppKitButton {
+            return false
+        }
+        guard let identifier = coveringAccessibilityIdentifier, !identifier.isEmpty else {
+            return true
+        }
+        return !identifier.hasPrefix("viewMode.")
+            && !identifier.hasPrefix("inspector.")
+            && !identifier.hasPrefix("sidebar.")
+            && identifier != "library.filter"
+            && identifier != "library.sidebar"
+    }
+
+    static func coveringAccessibilityIdentifier(from view: NSView?) -> String? {
+        var node = view
+        while let current = node {
+            let identifier = current.accessibilityIdentifier
+            if !identifier.isEmpty {
+                return identifier
+            }
+            node = current.superview
+        }
+        return nil
+    }
+
+    static func coveringIsAppKitButton(_ view: NSView?) -> Bool {
+        var node = view
+        while let current = node {
+            if current is NSButton {
+                return true
+            }
+            node = current.superview
+        }
+        return false
+    }
+}
+
 private final class NonHitTestingClickMonitorView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
@@ -49,7 +94,15 @@ private struct ImageCellClickMonitor: NSViewRepresentable {
                       event.window === view.window else { return event }
 
                 let location = view.convert(event.locationInWindow, from: nil)
-                guard view.bounds.contains(location) else { return event }
+                let hitView = event.window?.contentView?.hitTest(event.locationInWindow)
+                guard ImageCellEventRouting.shouldSelectCell(
+                    locationInView: location,
+                    viewBounds: view.bounds,
+                    coveringAccessibilityIdentifier:
+                        ImageCellEventRouting.coveringAccessibilityIdentifier(from: hitView),
+                    coveringIsAppKitButton:
+                        ImageCellEventRouting.coveringIsAppKitButton(hitView)
+                ) else { return event }
 
                 for action in ImageCellInteraction.actions(forClickCount: event.clickCount) {
                     switch action {
@@ -192,6 +245,7 @@ struct MainContentView: View {
             if showsToolbar {
                 FloatingViewModeControl(selection: $viewMode)
                     .padding(.bottom, 16)
+                    .zIndex(1)
                     .transition(.opacity)
             }
         }
@@ -247,12 +301,15 @@ private struct FloatingViewModeControl: View {
                             .fill(Color.primary.opacity(0.12))
                     }
                 }
-                .accessibilityValue(selection == mode ? "Selected" : "")
-                .accessibilityAddTraits(selection == mode ? [.isSelected] : [])
+                .accessibilityValue(selection == mode ? "Selected" : "Not selected")
+                .accessibilityAddTraits(
+                    selection == mode ? [.isButton, .isSelected] : [.isButton]
+                )
                 .accessibilityIdentifier("viewMode.\(mode.rawValue.lowercased())")
                 .keyboardShortcut(mode == .grid ? "1" : "2", modifiers: .command)
             }
         }
+        .contentShape(Capsule())
         .padding(3)
         .floatingViewModeGlass()
         .overlay {

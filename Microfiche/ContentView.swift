@@ -338,8 +338,7 @@ struct ContentView: View {
                         } else if isQuickPreviewPresented {
                             dismissQuickPreview()
                         } else if !selectedImageFileIDs.isEmpty {
-                            selectedImageFileIDs = []
-                            focusedImageFileID = nil
+                            applyLibrarySelection(LibrarySelectionTransition.clearingSelection())
                         }
                     },
                     onSpacebarPressed: {
@@ -446,12 +445,18 @@ struct ContentView: View {
         )
         .task {
             libraryIndex.configure(folders: libraryStorage.linkedFolders)
-            if !ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+            if !UITestHost.isLaunchedForUITesting {
                 restoreLibrarySelection()
             }
+            UITestHost.applyWindowLayoutIfNeeded()
             userPreferences.evaluateLaunchPresentation()
             await libraryIndex.reconcileAll()
+            UITestHost.applyWindowLayoutIfNeeded()
         }
+        .onAppear {
+            UITestHost.applyWindowLayoutIfNeeded()
+        }
+        .applyingUITestAccessibilityOverrides()
         .sheet(item: $contactSheetExportPresentation) { presentation in
             ContactSheetExportView(
                 contactSheet: presentation.contactSheet,
@@ -998,27 +1003,14 @@ struct ContentView: View {
     // MARK: - Selection
 
     private func handleImageSelection(for fileID: UUID) {
-        var nextFocusedID: UUID? = fileID
-
-        if NSApp.currentEvent?.modifierFlags.contains(.shift) == true,
-           let lastID = focusedImageFileID,
-           let lastIndex = displayedImageFiles.firstIndex(where: { $0.id == lastID }),
-           let currentIndex = displayedImageFiles.firstIndex(where: { $0.id == fileID }) {
-            let range = min(lastIndex, currentIndex)...max(lastIndex, currentIndex)
-            selectedImageFileIDs = Set(displayedImageFiles[range].map { $0.id })
-        } else if NSApp.currentEvent?.modifierFlags.contains(.command) == true {
-            if selectedImageFileIDs.contains(fileID) {
-                selectedImageFileIDs.remove(fileID)
-                nextFocusedID = displayedImageFiles.first {
-                    selectedImageFileIDs.contains($0.id)
-                }?.id
-            } else {
-                selectedImageFileIDs.insert(fileID)
-            }
-        } else {
-            selectedImageFileIDs = [fileID]
-        }
-        focusedImageFileID = nextFocusedID
+        applyLibrarySelection(
+            LibrarySelectionTransition.applyingPointerClick(
+                fileID: fileID,
+                displayedIDs: displayedImageFiles.map(\.id),
+                state: librarySelectionState,
+                modifier: currentLibrarySelectionModifier()
+            )
+        )
 
         if let file = displayedImageFiles.first(where: { $0.id == fileID }) {
             PreviewImageCache.shared.preloadImage(for: file.url)
@@ -1028,10 +1020,32 @@ struct ContentView: View {
     private func handleDoubleClickImage(for fileID: UUID) {
         if let file = displayedImageFiles.first(where: { $0.id == fileID }) {
             isQuickPreviewPresented = false
-            selectedImageFileIDs = [fileID]
-            focusedImageFileID = fileID
+            applyLibrarySelection(LibrarySelectionTransition.openingDetail(fileID: fileID))
             libraryPath = LibraryNavigation.path(toImage: file.id)
         }
+    }
+
+    private var librarySelectionState: LibrarySelectionState {
+        LibrarySelectionState(
+            selectedIDs: selectedImageFileIDs,
+            focusedID: focusedImageFileID
+        )
+    }
+
+    private func applyLibrarySelection(_ state: LibrarySelectionState) {
+        selectedImageFileIDs = state.selectedIDs
+        focusedImageFileID = state.focusedID
+    }
+
+    private func currentLibrarySelectionModifier() -> LibrarySelectionModifier {
+        let flags = NSApp.currentEvent?.modifierFlags ?? []
+        if flags.contains(.shift) {
+            return .shift
+        }
+        if flags.contains(.command) {
+            return .command
+        }
+        return .none
     }
 
     private func closeImageDetail() {
@@ -1261,25 +1275,27 @@ struct ContentView: View {
 
         guard let currentFocusedID = focusedImageFileID,
               let currentIndex = navigableFiles.firstIndex(where: { $0.id == currentFocusedID }) else {
-            if let firstFile = navigableFiles.first {
-                selectedImageFileIDs = [firstFile.id]
-                self.focusedImageFileID = firstFile.id
-                scrollToID = firstFile.id
-            }
+            let firstSelection = LibrarySelectionTransition.selectingFirstAvailable(
+                displayedIDs: navigableFiles.map(\.id)
+            )
+            applyLibrarySelection(firstSelection)
+            scrollToID = firstSelection.focusedID
             return
         }
 
         guard let nextIndex = nextImageIndex(from: currentIndex, direction: direction) else { return }
 
         let nextFile = navigableFiles[nextIndex]
-        if isQuickPreviewPresented || isImageDetailPresented {
-            selectedImageFileIDs = [nextFile.id]
-        } else if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
-            selectedImageFileIDs.insert(nextFile.id)
-        } else {
-            selectedImageFileIDs = [nextFile.id]
-        }
-        self.focusedImageFileID = nextFile.id
+        let extendSelection = !isQuickPreviewPresented
+            && !isImageDetailPresented
+            && NSApp.currentEvent?.modifierFlags.contains(.shift) == true
+        applyLibrarySelection(
+            LibrarySelectionTransition.applyingKeyboardMove(
+                nextFileID: nextFile.id,
+                selectedIDs: selectedImageFileIDs,
+                extendSelection: extendSelection
+            )
+        )
         if isImageDetailPresented {
             libraryPath = LibraryNavigation.path(toImage: nextFile.id)
         }
