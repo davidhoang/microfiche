@@ -85,6 +85,31 @@ enum LibraryBrowsingRecovery {
                 : state.isQuickPreviewPresented
         )
     }
+
+    static func inspectorHasContent(_ state: LibraryBrowsingState) -> Bool {
+        !state.selectedIDs.isEmpty
+    }
+}
+
+enum LibraryVisibleFolderIDs {
+    static func resolving(
+        selection: Selection?,
+        folders: [LinkedLibraryFolder]
+    ) -> [UUID] {
+        switch selection {
+        case .all:
+            return folders.compactMap { folder in
+                folder.isAvailable ? folder.id : nil
+            }
+        case .folder(let id):
+            guard folders.contains(where: { $0.id == id && $0.isAvailable }) else {
+                return []
+            }
+            return [id]
+        case .contactSheet, .none:
+            return []
+        }
+    }
 }
 
 extension Notification.Name {
@@ -518,7 +543,7 @@ struct ContentView: View {
         NavigationStack(path: $libraryPath) {
             MainContentView(
                 imageFiles: displayedImageFiles,
-                unavailableLocation: unavailableSelectedFolder,
+                locationRecovery: libraryLocationRecovery,
                 isFiltering: hasActiveFilter,
                 onRetryUnavailableLocation: {
                     libraryStorage.refreshLocations(saveAfterRefresh: true)
@@ -796,11 +821,18 @@ struct ContentView: View {
         }
     }
 
-    private var unavailableSelectedFolder: LinkedLibraryFolder? {
-        guard case .folder(let id) = selection,
-              let folder = libraryStorage.folder(id: id),
-              !folder.isAvailable else { return nil }
-        return folder
+    private var selectedLibraryFolder: LinkedLibraryFolder? {
+        guard case .folder(let id) = selection else { return nil }
+        return libraryStorage.folder(id: id)
+    }
+
+    private var libraryLocationRecovery: LibraryLocationRecovery? {
+        LibraryLocationRecovery.current(
+            selectedFolder: selectedLibraryFolder,
+            viewingAllImages: selection == .all,
+            folders: libraryStorage.linkedFolders,
+            hasVisibleImages: !displayedImageFiles.isEmpty
+        )
     }
 
     private var gridThumbnailSizeBinding: Binding<CGFloat> {
@@ -968,17 +1000,17 @@ struct ContentView: View {
     // MARK: - Image Loading
 
     private func refreshIndexedImages() {
-        let folderIDs: [UUID]
         switch selection {
-        case .all:
-            folderIDs = libraryStorage.linkedFolders.compactMap {
-                $0.isAvailable ? $0.id : nil
-            }
-        case .folder(let id):
-            folderIDs = libraryStorage.folder(id: id)?.isAvailable == true ? [id] : []
+        case .all, .folder:
+            break
         case .contactSheet, .none:
             return
         }
+
+        let folderIDs = LibraryVisibleFolderIDs.resolving(
+            selection: selection,
+            folders: libraryStorage.linkedFolders
+        )
 
         let nextFiles = libraryIndex.files(for: folderIDs)
         let recoveredState = LibraryBrowsingRecovery.reconciling(

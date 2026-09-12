@@ -58,7 +58,12 @@ final class ImageCache {
         }
 
         Task {
-            try? await ICloudItemDownloadCoordinator.shared.prepareForReading(url)
+            guard await LibraryImageReadiness.prepareLocalRead(of: url) else {
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+                return
+            }
             enqueueImageLoad(for: url, size: size, key: key, completion: completion)
         }
     }

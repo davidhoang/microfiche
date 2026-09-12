@@ -152,7 +152,7 @@ private struct ImageCellClickMonitor: NSViewRepresentable {
 
 struct MainContentView: View {
     let imageFiles: [ImageFile]
-    let unavailableLocation: LinkedLibraryFolder?
+    let locationRecovery: LibraryLocationRecovery?
     let isFiltering: Bool
     let onRetryUnavailableLocation: () -> Void
     let showsToolbar: Bool
@@ -186,7 +186,7 @@ struct MainContentView: View {
                     if imageFiles.isEmpty {
                         Spacer(minLength: 24)
                         EmptyLibraryStateView(
-                            unavailableLocation: unavailableLocation,
+                            locationRecovery: locationRecovery,
                             activeContactSheet: activeContactSheet,
                             isFiltering: isFiltering,
                             onRetryUnavailableLocation: onRetryUnavailableLocation
@@ -366,7 +366,7 @@ private struct FloatingViewModeGlassModifier: ViewModifier {
 }
 
 private struct EmptyLibraryStateView: View {
-    let unavailableLocation: LinkedLibraryFolder?
+    let locationRecovery: LibraryLocationRecovery?
     let activeContactSheet: ContactSheet?
     let isFiltering: Bool
     let onRetryUnavailableLocation: () -> Void
@@ -390,7 +390,7 @@ private struct EmptyLibraryStateView: View {
                     .frame(maxWidth: 360)
             }
 
-            if unavailableLocation != nil, !isFiltering {
+            if locationRecovery != nil {
                 Button("Try Again", action: onRetryUnavailableLocation)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
@@ -402,40 +402,35 @@ private struct EmptyLibraryStateView: View {
         .accessibilityLabel(emptyStateTitle)
         .accessibilityValue(emptyStateMessage)
         .accessibilityIdentifier(
-            unavailableLocation == nil ? "library.empty" : "library-location.unavailable"
+            locationRecovery == nil ? "library.empty" : "library-location.unavailable"
         )
     }
 
     private var emptyStateMessage: String {
+        if let locationRecovery {
+            return locationRecovery.message
+        }
         if isFiltering {
             return "Try a different name, tag, file type, or clear the active filters."
         }
         if let activeContactSheet {
             return "Drag image files into \(activeContactSheet.name) or drop them on its sidebar item."
         }
-        guard let unavailableLocation else {
-            return "Link a folder or drop images into a contact sheet to start building a library."
-        }
-
-        if unavailableLocation.isICloudDrive {
-            return "Check your network connection and iCloud Drive status, then try again."
-        }
-        let driveName = unavailableLocation.volumeName ?? unavailableLocation.name
-        return "Reconnect \(driveName) to restore \(unavailableLocation.displayName) automatically."
+        return "Link a folder or drop images into a contact sheet to start building a library."
     }
 
     private var emptyStateIcon: String {
+        if let locationRecovery { return locationRecovery.systemImage }
         if isFiltering { return "magnifyingglass" }
         if activeContactSheet != nil { return "photo.badge.plus" }
-        guard let unavailableLocation else { return "photo.on.rectangle.angled" }
-        return unavailableLocation.isICloudDrive ? "icloud.slash" : "externaldrive.badge.xmark"
+        return "photo.on.rectangle.angled"
     }
 
     private var emptyStateTitle: String {
+        if let locationRecovery { return locationRecovery.title }
         if isFiltering { return "No matches" }
         if activeContactSheet != nil { return "Drop images here" }
-        guard let unavailableLocation else { return "No images yet" }
-        return unavailableLocation.isICloudDrive ? "iCloud Drive unavailable" : "Reconnect the drive"
+        return "No images yet"
     }
 }
 

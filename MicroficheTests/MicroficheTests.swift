@@ -924,6 +924,174 @@ final class MicroficheTests: XCTestCase {
         XCTAssertNil(reconnected.focusedID)
         XCTAssertNil(reconnected.detailID)
         XCTAssertFalse(reconnected.isQuickPreviewPresented)
+        XCTAssertFalse(LibraryBrowsingRecovery.inspectorHasContent(disconnected))
+        XCTAssertFalse(LibraryBrowsingRecovery.inspectorHasContent(reconnected))
+    }
+
+    func testVisibleFolderIDsExcludeUnavailableLocations() {
+        let onlineID = UUID()
+        let offlineID = UUID()
+        let folders = [
+            makeLinkedFolder(
+                id: onlineID,
+                url: URL(fileURLWithPath: "/Volumes/Online/Photos")
+            ),
+            makeLinkedFolder(
+                id: offlineID,
+                url: URL(fileURLWithPath: "/Volumes/Offline/Photos"),
+                isAvailable: false
+            )
+        ]
+
+        XCTAssertEqual(
+            LibraryVisibleFolderIDs.resolving(selection: .all, folders: folders),
+            [onlineID]
+        )
+        XCTAssertEqual(
+            LibraryVisibleFolderIDs.resolving(
+                selection: .folder(offlineID),
+                folders: folders
+            ),
+            []
+        )
+        XCTAssertEqual(
+            LibraryVisibleFolderIDs.resolving(
+                selection: .folder(onlineID),
+                folders: folders
+            ),
+            [onlineID]
+        )
+        XCTAssertEqual(
+            LibraryVisibleFolderIDs.resolving(
+                selection: .contactSheet(UUID()),
+                folders: folders
+            ),
+            []
+        )
+    }
+
+    func testLibraryLocationRecoveryCoversFolderAndAllImagesDisconnect() {
+        let offlineExternal = LinkedLibraryFolder(
+            id: UUID(),
+            name: "Photos",
+            originalPath: "/Volumes/Archive/Photos",
+            volumeIdentifier: "uuid:archive",
+            volumeName: "Archive",
+            isExternal: true,
+            addedAt: .now,
+            resolvedURL: nil
+        )
+        let offlineICloud = LinkedLibraryFolder(
+            id: UUID(),
+            name: "com~apple~CloudDocs",
+            originalPath: "/Users/example/Library/Mobile Documents/com~apple~CloudDocs",
+            volumeIdentifier: nil,
+            volumeName: nil,
+            isExternal: false,
+            addedAt: .now,
+            resolvedURL: nil
+        )
+        let online = makeLinkedFolder(
+            url: URL(fileURLWithPath: "/Users/example/Pictures")
+        )
+
+        let folderRecovery = LibraryLocationRecovery.current(
+            selectedFolder: offlineExternal,
+            viewingAllImages: false,
+            folders: [offlineExternal, online],
+            hasVisibleImages: false
+        )
+        XCTAssertEqual(folderRecovery?.title, "Reconnect the drive")
+        XCTAssertEqual(
+            folderRecovery?.message,
+            "Reconnect Archive to restore Photos automatically."
+        )
+        XCTAssertEqual(folderRecovery?.systemImage, "externaldrive.badge.xmark")
+
+        let allImagesRecovery = LibraryLocationRecovery.current(
+            selectedFolder: nil,
+            viewingAllImages: true,
+            folders: [offlineExternal, offlineICloud],
+            hasVisibleImages: false
+        )
+        XCTAssertEqual(allImagesRecovery?.title, "Locations unavailable")
+        XCTAssertTrue(allImagesRecovery?.message.contains("Photos") == true)
+
+        let iCloudRecovery = LibraryLocationRecovery.current(
+            selectedFolder: nil,
+            viewingAllImages: true,
+            folders: [offlineICloud],
+            hasVisibleImages: false
+        )
+        XCTAssertEqual(iCloudRecovery?.title, "iCloud Drive unavailable")
+
+        let mixedEmptyAllImages = LibraryLocationRecovery.current(
+            selectedFolder: nil,
+            viewingAllImages: true,
+            folders: [online, offlineExternal],
+            hasVisibleImages: false
+        )
+        XCTAssertEqual(mixedEmptyAllImages?.title, "Reconnect the drive")
+
+        XCTAssertNil(
+            LibraryLocationRecovery.current(
+                selectedFolder: online,
+                viewingAllImages: false,
+                folders: [online],
+                hasVisibleImages: false
+            )
+        )
+        XCTAssertNil(
+            LibraryLocationRecovery.current(
+                selectedFolder: nil,
+                viewingAllImages: true,
+                folders: [offlineExternal],
+                hasVisibleImages: true
+            )
+        )
+        XCTAssertNotNil(
+            LibraryLocationRecovery.current(
+                selectedFolder: nil,
+                viewingAllImages: true,
+                folders: [offlineExternal],
+                hasVisibleImages: false
+            )
+        )
+    }
+
+    func testLibraryImageReadinessKeepsPlaceholderAndMissingOutOfDecode() {
+        let url = URL(fileURLWithPath: "/tmp/microfiche-missing.jpg")
+        XCTAssertEqual(
+            LibraryImageReadiness.resolving(url: url, itemState: .notDownloaded),
+            .placeholder
+        )
+        XCTAssertEqual(
+            LibraryImageReadiness.resolving(url: url, itemState: .downloading),
+            .downloading
+        )
+        XCTAssertEqual(
+            LibraryImageReadiness.resolving(
+                url: url,
+                itemState: .failed("Network unavailable")
+            ),
+            .failed("Network unavailable")
+        )
+        XCTAssertEqual(
+            LibraryImageReadiness.resolving(url: url, itemState: .local),
+            .missing
+        )
+        XCTAssertFalse(
+            LibraryImageReadiness.resolving(url: url, itemState: .notDownloaded)
+                .shouldDecodeImage
+        )
+        XCTAssertFalse(
+            LibraryImageReadiness.resolving(url: url, itemState: .failed("down"))
+                .shouldDecodeImage
+        )
+        XCTAssertTrue(
+            LibraryImageReadiness.resolving(url: url, itemState: .downloading)
+                .shouldDecodeImage
+        )
     }
 
     private func makeLinkedFolder(
@@ -1071,6 +1239,19 @@ final class MicroficheTests: XCTestCase {
         XCTAssertFalse(state.finish(.success(()), requestID: failed))
         XCTAssertTrue(state.finish(.success(()), requestID: finalRetry))
         XCTAssertEqual(state.phase, .loaded)
+
+        XCTAssertFalse(state.shouldRestart(observing: .current))
+        XCTAssertTrue(state.shouldRestart(observing: .notDownloaded))
+
+        var placeholder = ImageLoadState()
+        placeholder.observe(.notDownloaded)
+        XCTAssertFalse(placeholder.shouldRestart(observing: .notDownloaded))
+        XCTAssertTrue(placeholder.shouldRestart(observing: .current))
+
+        var failedState = ImageLoadState()
+        failedState.observe(.failed("Network unavailable"))
+        XCTAssertFalse(failedState.shouldRestart(observing: .failed("Network unavailable")))
+        XCTAssertTrue(failedState.shouldRestart(observing: .current))
     }
 
     func testICloudDownloadCoordinatorHandlesSuccessFailureTimeoutAndCancellation() async throws {
@@ -1143,6 +1324,66 @@ final class MicroficheTests: XCTestCase {
         } catch {
             XCTAssertTrue(error is CancellationError)
         }
+    }
+
+    func testICloudDownloadCoordinatorJoinsInFlightDownloadsAfterWaiterCancellation() async throws {
+        let url = URL(fileURLWithPath: "/tmp/microfiche-icloud-join.jpg")
+        let hold = DownloadHold()
+        let downloader = StubICloudItemDownloader(states: [
+            .notDownloaded, .downloading, .current
+        ])
+        let coordinator = ICloudItemDownloadCoordinator(
+            downloader: downloader,
+            maxPollAttempts: 4,
+            pollInterval: .milliseconds(1),
+            sleep: { _ in
+                await hold.park()
+            }
+        )
+
+        let first = Task {
+            try await coordinator.prepareForReading(url)
+        }
+        await hold.waitUntilParked()
+        first.cancel()
+        let firstResult = await first.result
+        guard case .failure(let firstError) = firstResult else {
+            XCTFail("Expected the cancelled waiter to fail")
+            hold.release()
+            return
+        }
+        XCTAssertTrue(firstError is CancellationError)
+
+        let second = Task {
+            try await coordinator.prepareForReading(url)
+        }
+        hold.release()
+        try await second.value
+        XCTAssertEqual(downloader.requestCount, 1)
+    }
+
+    func testICloudDownloadCoordinatorCoalescesConcurrentWaiters() async throws {
+        let url = URL(fileURLWithPath: "/tmp/microfiche-icloud-coalesce.jpg")
+        let hold = DownloadHold()
+        let downloader = StubICloudItemDownloader(states: [
+            .notDownloaded, .downloading, .current
+        ])
+        let coordinator = ICloudItemDownloadCoordinator(
+            downloader: downloader,
+            maxPollAttempts: 4,
+            pollInterval: .milliseconds(1),
+            sleep: { _ in
+                await hold.park()
+            }
+        )
+
+        async let first: Void = coordinator.prepareForReading(url)
+        await hold.waitUntilParked()
+        async let second: Void = coordinator.prepareForReading(url)
+        hold.release()
+        try await first
+        try await second
+        XCTAssertEqual(downloader.requestCount, 1)
     }
 
     func testDroppedImagePersistsWhenContactSheetStorageReloads() throws {
@@ -1952,6 +2193,47 @@ final class MicroficheTests: XCTestCase {
         XCTAssertNil(restored.resolvedURL())
     }
 
+}
+
+private final class DownloadHold: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isParked = false
+    private var parkContinuation: CheckedContinuation<Void, Never>?
+    private var parkedWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitUntilParked() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if isParked {
+                lock.unlock()
+                continuation.resume()
+                return
+            }
+            parkedWaiters.append(continuation)
+            lock.unlock()
+        }
+    }
+
+    func park() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            isParked = true
+            let waiters = parkedWaiters
+            parkedWaiters.removeAll()
+            parkContinuation = continuation
+            lock.unlock()
+            waiters.forEach { $0.resume() }
+        }
+    }
+
+    func release() {
+        lock.lock()
+        let continuation = parkContinuation
+        parkContinuation = nil
+        isParked = false
+        lock.unlock()
+        continuation?.resume()
+    }
 }
 
 private final class StubICloudItemDownloader: ICloudItemDownloading, @unchecked Sendable {
