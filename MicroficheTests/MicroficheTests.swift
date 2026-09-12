@@ -152,6 +152,7 @@ final class MicroficheTests: XCTestCase {
     }
 
     func testReducedMotionDisablesEverySharedAnimationToken() {
+        XCTAssertFalse(UITestHost.reduceMotion)
         XCTAssertTrue(MicroficheMotion.isEnabled(reducedMotion: false))
         XCTAssertFalse(MicroficheMotion.isEnabled(reducedMotion: true))
         XCTAssertNotNil(MicroficheMotion.snap(reducedMotion: false))
