@@ -98,7 +98,8 @@ struct PhotoTechnicalMetadataLoadState: Equatable, Sendable {
 
 enum PhotoMetadataReader {
     static func read(from url: URL) throws -> PhotoTechnicalMetadata? {
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        guard LibraryImageReadiness.resolving(url: url) == .readable,
+              FileManager.default.fileExists(atPath: url.path) else {
             throw PhotoMetadataReaderError.fileUnavailable
         }
 

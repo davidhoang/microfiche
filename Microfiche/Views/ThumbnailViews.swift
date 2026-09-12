@@ -19,6 +19,7 @@ struct OptimizedAsyncImage: View {
     @State private var isLoading = false
     @State private var hasError = false
     @State private var activeDecodeSize: CGFloat?
+    @State private var readiness: LibraryImageReadiness = .readable
 
     var body: some View {
         Group {
@@ -27,14 +28,11 @@ struct OptimizedAsyncImage: View {
                     .resizable()
                     .interpolation(isResizing ? .low : .medium)
                     .aspectRatio(contentMode: .fit)
-            } else if hasError {
-                Image(systemName: "photo")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: size * 0.3))
             } else {
-                thumbnailPlaceholder
+                statusContent
             }
         }
+        .accessibilityIdentifier(displayedReadiness.accessibilityIdentifier)
         .onAppear(perform: syncActiveDecodeSize)
         .onChange(of: size) { _, _ in
             syncActiveDecodeSize()
@@ -46,9 +44,14 @@ struct OptimizedAsyncImage: View {
             syncActiveDecodeSize()
         }
         .task(id: cacheIdentity) {
-            await MainActor.run {
-                loadImage()
-            }
+            refreshReadinessAndLoad()
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .microficheCloudItemDidBecomeReadable)
+        ) { notification in
+            guard MicroficheCloudItemNotification.path(from: notification)
+                == url.standardizedFileURL.path else { return }
+            refreshReadinessAndLoad()
         }
     }
 
@@ -60,9 +63,42 @@ struct OptimizedAsyncImage: View {
         "\(url.path)|\(Int(resolvedDecodeSize.rounded()))"
     }
 
+    private var displayedReadiness: LibraryImageReadiness {
+        if image != nil {
+            return .readable
+        }
+        return readiness
+    }
+
+    @ViewBuilder
+    private var statusContent: some View {
+        switch displayedReadiness {
+        case .placeholder:
+            thumbnailSymbol("icloud.and.arrow.down")
+        case .downloading:
+            ProgressView()
+                .controlSize(.small)
+        case .failed, .missing:
+            thumbnailSymbol("photo")
+        case .readable:
+            if hasError {
+                thumbnailSymbol("photo")
+            } else {
+                thumbnailPlaceholder
+            }
+        }
+    }
+
     private var thumbnailPlaceholder: some View {
         RoundedRectangle(cornerRadius: 6, style: .continuous)
             .fill(Color(NSColor.quaternaryLabelColor).opacity(isLoading ? 0.18 : 0.12))
+    }
+
+    private func thumbnailSymbol(_ name: String) -> some View {
+        Image(systemName: name)
+            .foregroundColor(.secondary)
+            .font(.system(size: size * 0.3))
+            .symbolRenderingMode(.hierarchical)
     }
 
     private func syncActiveDecodeSize() {
@@ -78,6 +114,24 @@ struct OptimizedAsyncImage: View {
         if activeDecodeSize != target {
             activeDecodeSize = target
         }
+    }
+
+    private func refreshReadinessAndLoad() {
+        readiness = LibraryImageReadiness.resolving(url: url)
+        let requestSize = resolvedDecodeSize
+        if let cachedImage = ImageCache.shared.getImage(for: url, size: requestSize) {
+            image = cachedImage
+            hasError = false
+            isLoading = false
+            return
+        }
+        guard readiness.shouldDecodeImage else {
+            image = nil
+            isLoading = false
+            hasError = false
+            return
+        }
+        loadImage()
     }
 
     private func loadImage() {
@@ -97,9 +151,11 @@ struct OptimizedAsyncImage: View {
 
         ImageCache.shared.loadImage(for: url, size: requestSize) { loadedImage in
             isLoading = false
+            readiness = LibraryImageReadiness.resolving(url: url)
 
             if let loadedImage {
                 image = loadedImage
+                hasError = false
             } else if image == nil {
                 hasError = true
             }

@@ -77,7 +77,14 @@ final class PreviewImageCache {
         }
 
         Task {
-            try? await ICloudItemDownloadCoordinator.shared.prepareForReading(url)
+            guard await LibraryImageReadiness.prepareLocalRead(of: url) else {
+                if let completion {
+                    DispatchQueue.main.async {
+                        completion(nil)
+                    }
+                }
+                return
+            }
             enqueueImageLoad(for: url, priority: priority, completion: completion)
         }
     }

@@ -73,6 +73,25 @@ struct ImageLoadState: Equatable {
         phase = .cancelled
         return true
     }
+
+    func shouldRestart(observing itemState: ICloudItemState) -> Bool {
+        switch (phase, itemState) {
+        case (.loaded, .local), (.loaded, .current):
+            return false
+        case (.placeholder, .notDownloaded):
+            return false
+        case (.downloading, .downloading), (.downloading, .notDownloaded):
+            return false
+        case (.retrying, _), (.loading, _):
+            return false
+        case (.failed, .failed):
+            return false
+        case (.idle, _), (.cancelled, _):
+            return true
+        default:
+            return true
+        }
+    }
 }
 
 enum PreviewImageLoadError: Error, LocalizedError {
@@ -95,19 +114,14 @@ final class PreviewImageLoadModel: ObservableObject {
     private var url: URL?
 
     func prepare(url: URL) {
-        if self.url == url {
-            switch state.phase {
-            case .cancelled, .idle:
-                break
-            default:
-                return
-            }
+        let itemState = url.iCloudItemState
+        if self.url == url, !state.shouldRestart(observing: itemState) {
+            return
         }
         task?.cancel()
         self.url = url
         image = nil
 
-        let itemState = url.iCloudItemState
         var nextState = state
         nextState.observe(itemState)
         state = nextState

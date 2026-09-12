@@ -26,6 +26,13 @@ struct RecoverablePreviewImage: View {
         .task(id: url) {
             model.prepare(url: url)
         }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .microficheCloudItemDidBecomeReadable)
+        ) { notification in
+            guard MicroficheCloudItemNotification.path(from: notification)
+                == url.standardizedFileURL.path else { return }
+            model.prepare(url: url)
+        }
         .onChange(of: model.state.phase) { _, phase in
             guard let message = MicroficheAccessibility.imageLoadAnnouncement(
                 phase: phase,

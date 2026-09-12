@@ -57,6 +57,65 @@ enum LibraryVolumeClassification {
     }
 }
 
+struct LibraryLocationRecovery: Equatable {
+    let title: String
+    let message: String
+    let systemImage: String
+
+    static func current(
+        selectedFolder: LinkedLibraryFolder?,
+        viewingAllImages: Bool,
+        folders: [LinkedLibraryFolder],
+        hasVisibleImages: Bool
+    ) -> LibraryLocationRecovery? {
+        if let selectedFolder, !selectedFolder.isAvailable {
+            return presentation(for: [selectedFolder])
+        }
+
+        guard viewingAllImages, !hasVisibleImages else { return nil }
+
+        let unavailableFolders = folders.filter { !$0.isAvailable }
+        guard !unavailableFolders.isEmpty else { return nil }
+        return presentation(for: unavailableFolders)
+    }
+
+    private static func presentation(
+        for folders: [LinkedLibraryFolder]
+    ) -> LibraryLocationRecovery {
+        if folders.count == 1, let folder = folders.first {
+            if folder.isICloudDrive {
+                return LibraryLocationRecovery(
+                    title: "iCloud Drive unavailable",
+                    message: "Check your network connection and iCloud Drive status, then try again.",
+                    systemImage: "icloud.slash"
+                )
+            }
+
+            let driveName = folder.volumeName ?? folder.name
+            return LibraryLocationRecovery(
+                title: "Reconnect the drive",
+                message: "Reconnect \(driveName) to restore \(folder.displayName) automatically.",
+                systemImage: "externaldrive.badge.xmark"
+            )
+        }
+
+        if folders.allSatisfy(\.isICloudDrive) {
+            return LibraryLocationRecovery(
+                title: "iCloud Drive unavailable",
+                message: "Check your network connection and iCloud Drive status, then try again.",
+                systemImage: "icloud.slash"
+            )
+        }
+
+        let names = folders.map(\.displayName).joined(separator: ", ")
+        return LibraryLocationRecovery(
+            title: "Locations unavailable",
+            message: "Reconnect the offline folders to restore \(names) automatically.",
+            systemImage: "externaldrive.badge.xmark"
+        )
+    }
+}
+
 enum LibraryLocationPresentation {
     private static let iCloudDriveDirectoryName = "com~apple~CloudDocs"
 
