@@ -19,19 +19,19 @@ enum MicroficheMotion {
     static let panel = Animation.spring(response: 0.32, dampingFraction: 0.9)
 
     static func isEnabled(reducedMotion: Bool) -> Bool {
-        !reducedMotion
+        !reducedMotion && !UITestHost.reduceMotion
     }
 
     static func snap(reducedMotion: Bool) -> Animation? {
-        reducedMotion ? nil : snap
+        isEnabled(reducedMotion: reducedMotion) ? snap : nil
     }
 
     static func transition(reducedMotion: Bool) -> Animation? {
-        reducedMotion ? nil : transition
+        isEnabled(reducedMotion: reducedMotion) ? transition : nil
     }
 
     static func panel(reducedMotion: Bool) -> Animation? {
-        reducedMotion ? nil : panel
+        isEnabled(reducedMotion: reducedMotion) ? panel : nil
     }
 }
 
