@@ -396,16 +396,12 @@ struct ImageMetadataInspectorView: View {
                         isEditing.wrappedValue = true
                     }
                 } label: {
-                    Image(systemName: isEditing.wrappedValue ? "checkmark" : (isBatch ? "square.and.pencil" : "pencil"))
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
+                    Text(isEditing.wrappedValue ? "Apply" : "Edit")
                 }
-                .buttonStyle(.borderless)
-                .frame(minWidth: 44, minHeight: 28)
-                .contentShape(Rectangle())
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .disabled(isSaving)
-                .help(isEditing.wrappedValue ? "Replace \(title)" : "Replace \(title)")
+                .help(isEditing.wrappedValue ? "Apply \(title)" : "Edit \(title)")
                 .accessibilityLabel(
                     isEditing.wrappedValue ? "Apply \(title)" : "Edit \(title)"
                 )
@@ -447,10 +443,20 @@ struct ImageMetadataInspectorView: View {
                 .controlSize(.small)
                 .accessibilityIdentifier("\(replaceIdentifier).cancel")
             } else {
-                Text(displayText(for: field, placeholder: placeholder))
-                    .foregroundStyle(fieldDisplayIsPlaceholder(field) ? .secondary : .primary)
-                    .italic(fieldDisplayIsPlaceholder(field))
-                    .textSelection(.enabled)
+                Button {
+                    draft.wrappedValue = displayed
+                    isEditing.wrappedValue = true
+                } label: {
+                    Text(displayText(for: field, placeholder: placeholder))
+                        .foregroundStyle(fieldDisplayIsPlaceholder(field) ? .secondary : .primary)
+                        .italic(fieldDisplayIsPlaceholder(field))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isSaving)
+                .accessibilityLabel(title)
+                .accessibilityIdentifier("\(replaceIdentifier).value")
             }
         }
     }

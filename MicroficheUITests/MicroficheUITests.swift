@@ -275,18 +275,18 @@ final class MicroficheUITests: XCTestCase {
         tap(button("inspector.toggle", in: app))
         XCTAssertTrue(element("inspector.content", in: app).waitForExistence(timeout: 5))
 
-        let replace = button("inspector.replace-comments", in: app)
-        XCTAssertTrue(replace.waitForExistence(timeout: 5))
-
         for attempt in 1...2 {
-            tap(replace)
-            let editor = element("inspector.replace-comments.editor", in: app)
-            XCTAssertTrue(editor.waitForExistence(timeout: 5))
+            openInspectorCommentsEditor(in: app)
+            let editor = commentsEditor(in: app)
+            XCTAssertTrue(
+                editor.waitForExistence(timeout: 5),
+                "Comments editor should appear on attempt \(attempt)"
+            )
             tap(editor)
             editor.typeText("Keyboard audit \(attempt)")
             editor.typeKey(.rightArrow, modifierFlags: [])
             XCTAssertTrue(waitUntilChosen(first))
-            tap(button("inspector.replace-comments.cancel", in: app))
+            tapInspectorControl("inspector.replace-comments.cancel", in: app)
             XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
         }
     }
@@ -401,6 +401,57 @@ final class MicroficheUITests: XCTestCase {
         } else {
             element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
         }
+    }
+
+    @MainActor
+    private func tapInspectorControl(_ identifier: String, in app: XCUIApplication) {
+        let control = element(identifier, in: app)
+        XCTAssertTrue(
+            control.waitForExistence(timeout: 5),
+            "Expected \(identifier) in the inspector"
+        )
+        revealInspectorControl(control, in: app)
+        tap(control)
+    }
+
+    @MainActor
+    private func revealInspectorControl(_ control: XCUIElement, in app: XCUIApplication) {
+        let inspector = element("inspector.content", in: app)
+        guard inspector.exists, !control.isHittable else { return }
+
+        for _ in 0..<12 where !control.isHittable {
+            inspector.scroll(byDeltaX: 0, deltaY: -80)
+        }
+        if control.isHittable { return }
+
+        inspector.scroll(byDeltaX: 0, deltaY: 480)
+        for _ in 0..<12 where !control.isHittable {
+            inspector.scroll(byDeltaX: 0, deltaY: -80)
+        }
+    }
+
+    @MainActor
+    private func openInspectorCommentsEditor(in app: XCUIApplication) {
+        tapInspectorControl("inspector.replace-comments", in: app)
+        if commentsEditor(in: app).waitForExistence(timeout: 1) {
+            return
+        }
+
+        tapInspectorControl("inspector.replace-comments.value", in: app)
+        XCTAssertTrue(
+            commentsEditor(in: app).waitForExistence(timeout: 5),
+            "Expected the comments editor after activating Edit Comments"
+        )
+    }
+
+    @MainActor
+    private func commentsEditor(in app: XCUIApplication) -> XCUIElement {
+        let identifier = "inspector.replace-comments.editor"
+        let textView = app.textViews[identifier]
+        if textView.exists {
+            return textView
+        }
+        return element(identifier, in: app)
     }
 
     @MainActor
