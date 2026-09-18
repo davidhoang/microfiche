@@ -290,26 +290,8 @@ struct ContentView: View {
         liveGridThumbnailSize ?? gridThumbnailSize
     }
 
-    private var observedLibrary: some View {
+    private var searchObservedLibrary: some View {
         libraryContainer
-                .onChange(of: selection) { _, newValue in
-                    switch newValue {
-                    case .all:
-                        refreshIndexedImages()
-                        lastSelectedLibraryFolderID = ""
-                    case .folder(let id):
-                        refreshIndexedImages()
-                        lastSelectedLibraryFolderID = id.uuidString
-                    case .contactSheet(let id):
-                        imageFiles = contactSheetStorage.getImages(for: id)
-                    case .none:
-                        imageFiles = []
-                    }
-                    selectedImageFileIDs = []
-                    focusedImageFileID = nil
-                    isQuickPreviewPresented = false
-                    libraryPath.removeAll()
-                }
                 .onChange(of: searchText) {
                     pruneSelectionToVisibleFiles()
                 }
@@ -321,24 +303,6 @@ struct ContentView: View {
                 }
                 .onChange(of: selectedLabel) {
                     pruneSelectionToVisibleFiles()
-                }
-                .onChange(of: accessibilitySelectionSnapshot) {
-                    MicroficheAccessibility.announce(
-                        MicroficheAccessibility.selectionAnnouncement(
-                            selectedFiles: selectedImageFiles,
-                            focusedFile: focusedImageFile
-                        )
-                    )
-                }
-                .onChange(of: libraryStorage.linkedFolders) {
-                    libraryIndex.configure(folders: libraryStorage.linkedFolders)
-                    reloadSelectedLibraryLocation()
-                    Task {
-                        await libraryIndex.reconcileAll()
-                    }
-                }
-                .onChange(of: libraryIndex.revision) {
-                    refreshIndexedImages()
                 }
                 .onReceive(
                     NotificationCenter.default.publisher(
@@ -364,6 +328,46 @@ struct ContentView: View {
                 }
                 .task(id: searchMetadataLoadSignature) {
                     await reloadSearchMetadata()
+                }
+    }
+
+    private var observedLibrary: some View {
+        searchObservedLibrary
+                .onChange(of: selection) { _, newValue in
+                    switch newValue {
+                    case .all:
+                        refreshIndexedImages()
+                        lastSelectedLibraryFolderID = ""
+                    case .folder(let id):
+                        refreshIndexedImages()
+                        lastSelectedLibraryFolderID = id.uuidString
+                    case .contactSheet(let id):
+                        imageFiles = contactSheetStorage.getImages(for: id)
+                    case .none:
+                        imageFiles = []
+                    }
+                    selectedImageFileIDs = []
+                    focusedImageFileID = nil
+                    isQuickPreviewPresented = false
+                    libraryPath.removeAll()
+                }
+                .onChange(of: accessibilitySelectionSnapshot) {
+                    MicroficheAccessibility.announce(
+                        MicroficheAccessibility.selectionAnnouncement(
+                            selectedFiles: selectedImageFiles,
+                            focusedFile: focusedImageFile
+                        )
+                    )
+                }
+                .onChange(of: libraryStorage.linkedFolders) {
+                    libraryIndex.configure(folders: libraryStorage.linkedFolders)
+                    reloadSelectedLibraryLocation()
+                    Task {
+                        await libraryIndex.reconcileAll()
+                    }
+                }
+                .onChange(of: libraryIndex.revision) {
+                    refreshIndexedImages()
                 }
                 .onChange(of: libraryPath) { oldPath, newPath in
                     if LibraryNavigation.detailImageID(in: oldPath) != nil,
