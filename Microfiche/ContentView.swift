@@ -114,6 +114,7 @@ enum LibraryVisibleFolderIDs {
 
 extension Notification.Name {
     static let microficheMoveSelectionToArchive = Notification.Name("microficheMoveSelectionToArchive")
+    static let microficheFocusLibrarySearch = Notification.Name("microficheFocusLibrarySearch")
 }
 
 enum ImageNavigation {
@@ -154,6 +155,18 @@ private struct AccessibilitySelectionSnapshot: Equatable {
     let focusedID: UUID?
 }
 
+private struct LibrarySearchMetadataLoadSignature: Hashable {
+    let fileIDs: [UUID]
+    let libraryRevision: UInt64
+    let metadataRevision: UInt64
+}
+
+private struct LibrarySearchMetadataInput: Sendable {
+    let fileID: UUID
+    let url: URL
+    let local: ImageMetadata
+}
+
 // MARK: - Content View
 
 struct ContentView: View {
@@ -187,9 +200,14 @@ struct ContentView: View {
     @AppStorage private var isLibrarySidebarCollapsed: Bool
     @State private var externalDriveNotice: String?
     @State private var searchText = ""
+    @State private var isSearchPresented = false
     @State private var selectedFileType = ""
     @State private var selectedTag = ""
+    @State private var selectedLabel = FinderLabel.none
+    @State private var searchMetadataByFileID: [UUID: ResolvedImageMetadata] = [:]
+    @State private var metadataRevision: UInt64 = 0
     @AppStorage private var lastSelectedLibraryFolderID: String
+    private let metadataStore: ImageMetadataStore
     @StateObject private var libraryStorage: LibraryStorage
     @StateObject private var contactSheetStorage: ContactSheetStorage
     @StateObject private var userPreferences: UserPreferences
@@ -231,6 +249,7 @@ struct ContentView: View {
             _userPreferences = StateObject(wrappedValue: fixture.userPreferences)
             _archiveFolderStore = StateObject(wrappedValue: fixture.archiveFolderStore)
             _libraryIndex = StateObject(wrappedValue: fixture.libraryIndex)
+            metadataStore = fixture.metadataStore
             return
         }
         #endif
@@ -264,14 +283,56 @@ struct ContentView: View {
         _userPreferences = StateObject(wrappedValue: UserPreferences.shared)
         _archiveFolderStore = StateObject(wrappedValue: ArchiveFolderStore.shared)
         _libraryIndex = StateObject(wrappedValue: LibraryIndexStore.shared)
+        metadataStore = .shared
     }
 
     private var displayedGridThumbnailSize: CGFloat {
         liveGridThumbnailSize ?? gridThumbnailSize
     }
 
-    private var observedLibrary: some View {
+    private var searchObservedLibrary: some View {
         libraryContainer
+                .onChange(of: searchText) {
+                    pruneSelectionToVisibleFiles()
+                }
+                .onChange(of: selectedFileType) {
+                    pruneSelectionToVisibleFiles()
+                }
+                .onChange(of: selectedTag) {
+                    pruneSelectionToVisibleFiles()
+                }
+                .onChange(of: selectedLabel) {
+                    pruneSelectionToVisibleFiles()
+                }
+                .onReceive(
+                    NotificationCenter.default.publisher(
+                        for: .microficheImageMetadataDidChange
+                    )
+                ) { notification in
+                    guard let changedStore = notification.object as? ImageMetadataStore,
+                          changedStore === metadataStore else {
+                        return
+                    }
+                    metadataRevision &+= 1
+                }
+                .onReceive(
+                    NotificationCenter.default.publisher(
+                        for: .microficheFocusLibrarySearch
+                    )
+                ) { _ in
+                    isSearchPresented = false
+                    Task { @MainActor in
+                        await Task.yield()
+                        isSearchPresented = true
+                    }
+                }
+                .task(id: searchMetadataLoadSignature) {
+                    await reloadSearchMetadata()
+                }
+    }
+
+    private var observedLibrary: some View {
+        searchObservedLibrary
                 .onChange(of: selection) { _, newValue in
                     switch newValue {
                     case .all:
@@ -289,15 +350,6 @@ struct ContentView: View {
                     focusedImageFileID = nil
                     isQuickPreviewPresented = false
                     libraryPath.removeAll()
-                }
-                .onChange(of: searchText) {
-                    pruneSelectionToVisibleFiles()
-                }
-                .onChange(of: selectedFileType) {
-                    pruneSelectionToVisibleFiles()
-                }
-                .onChange(of: selectedTag) {
-                    pruneSelectionToVisibleFiles()
                 }
                 .onChange(of: accessibilitySelectionSnapshot) {
                     MicroficheAccessibility.announce(
@@ -534,7 +586,12 @@ struct ContentView: View {
             .toolbar {
                 libraryToolbar
             }
-            .searchable(text: $searchText, placement: .toolbar, prompt: "Search library")
+            .searchable(
+                text: $searchText,
+                isPresented: $isSearchPresented,
+                placement: .toolbar,
+                prompt: "Search library"
+            )
             .microficheToolbarChrome()
         )
     }
@@ -567,7 +624,10 @@ struct ContentView: View {
             )
             .inspector(isPresented: libraryInspectorBinding) {
                 if !selectedImageFiles.isEmpty {
-                    ImageMetadataInspectorView(files: selectedImageFiles)
+                    ImageMetadataInspectorView(
+                        files: selectedImageFiles,
+                        metadataStore: metadataStore
+                    )
                         .id(selectedImageFiles.map(\.id))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
@@ -694,6 +754,7 @@ struct ContentView: View {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !selectedFileType.isEmpty
             || !selectedTag.isEmpty
+            || selectedLabel != .none
     }
 
     private var displayedImageFiles: [ImageFile] {
@@ -701,10 +762,14 @@ struct ContentView: View {
         return imageFiles.filter { file in
             LibraryFiltering.matches(
                 file: file,
-                metadata: ImageMetadataStore.shared.metadata(for: file.url),
+                metadata: searchMetadata(
+                    for: file,
+                    local: metadataStore.metadata(for: file.url)
+                ),
                 query: query,
                 fileType: selectedFileType,
-                tag: selectedTag
+                tag: selectedTag,
+                label: selectedLabel
             )
         }
     }
@@ -716,7 +781,59 @@ struct ContentView: View {
     }
 
     private var availableTags: [String] {
-        ImageMetadataStore.shared.allTags(for: imageFiles.map(\.url))
+        var tags = Set(metadataStore.allTags(for: imageFiles.map(\.url)))
+        for metadata in searchMetadataByFileID.values {
+            tags.formUnion(metadata.tags)
+        }
+        return tags.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private var searchMetadataLoadSignature: LibrarySearchMetadataLoadSignature {
+        LibrarySearchMetadataLoadSignature(
+            fileIDs: imageFiles.map(\.id),
+            libraryRevision: libraryIndex.revision,
+            metadataRevision: metadataRevision
+        )
+    }
+
+    private func searchMetadata(
+        for file: ImageFile,
+        local: ImageMetadata
+    ) -> ResolvedImageMetadata {
+        searchMetadataByFileID[file.id]
+            ?? BatchMetadataAggregation.resolved(native: .empty, local: local)
+    }
+
+    private func reloadSearchMetadata() async {
+        let inputs = imageFiles.map {
+            LibrarySearchMetadataInput(
+                fileID: $0.id,
+                url: $0.url,
+                local: metadataStore.metadata(for: $0.url)
+            )
+        }
+
+        let loadTask = Task.detached(priority: .utility) {
+            var loaded: [UUID: ResolvedImageMetadata] = [:]
+            loaded.reserveCapacity(inputs.count)
+            for input in inputs {
+                guard !Task.isCancelled else { break }
+                loaded[input.fileID] = BatchMetadataAggregation.resolved(
+                    native: NativeFileMetadataService.load(from: input.url),
+                    local: input.local
+                )
+            }
+            return loaded
+        }
+
+        let loaded = await withTaskCancellationHandler {
+            await loadTask.value
+        } onCancel: {
+            loadTask.cancel()
+        }
+        guard !Task.isCancelled else { return }
+        searchMetadataByFileID = loaded
+        pruneSelectionToVisibleFiles()
     }
 
     private var filterAccessibilityValue: String {
@@ -730,6 +847,9 @@ struct ContentView: View {
         }
         if !selectedTag.isEmpty {
             parts.append("Tag \(selectedTag)")
+        }
+        if selectedLabel != .none {
+            parts.append("Finder label \(selectedLabel.displayName)")
         }
         return parts.isEmpty ? "No filters" : parts.joined(separator: ", ")
     }
@@ -750,10 +870,18 @@ struct ContentView: View {
                 }
             }
 
+            Picker("Finder Label", selection: $selectedLabel) {
+                Text("All Finder Labels").tag(FinderLabel.none)
+                ForEach(FinderLabel.coloredCases) { label in
+                    Text(label.displayName).tag(label)
+                }
+            }
+
             Divider()
             Button("Clear Filters") {
                 selectedFileType = ""
                 selectedTag = ""
+                selectedLabel = .none
                 searchText = ""
             }
             .disabled(!hasActiveFilter)
@@ -810,7 +938,8 @@ struct ContentView: View {
         if let file = imageFiles.first(where: { $0.id == route.imageID }) {
             ImageDetailView(
                 file: file,
-                isMetadataPresented: $isDetailMetadataPresented
+                isMetadataPresented: $isDetailMetadataPresented,
+                metadataStore: metadataStore
             )
         } else {
             ContentUnavailableView(

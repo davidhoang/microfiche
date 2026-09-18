@@ -13,6 +13,7 @@ struct UITestFixture {
     let userPreferences: UserPreferences
     let archiveFolderStore: ArchiveFolderStore
     let libraryIndex: LibraryIndexStore
+    let metadataStore: ImageMetadataStore
 
     static func make() -> UITestFixture {
         let fileManager = FileManager.default
@@ -42,6 +43,29 @@ struct UITestFixture {
         precondition(imageURLs.allSatisfy {
             fileManager.fileExists(atPath: $0.path)
         })
+
+        let metadataStore = ImageMetadataStore(
+            persistenceURL: root.appendingPathComponent("image-metadata.json"),
+            fileManager: fileManager
+        )
+        metadataStore.save(
+            ImageMetadata(
+                tags: ["Travel"],
+                labels: [FinderLabel.red.displayName],
+                comments: "Golden hour",
+                whereFrom: "Seattle"
+            ),
+            for: imageURLs[0]
+        )
+        metadataStore.save(
+            ImageMetadata(
+                tags: ["Portrait"],
+                labels: [FinderLabel.blue.displayName],
+                comments: "Studio",
+                whereFrom: "Portland"
+            ),
+            for: imageURLs[1]
+        )
 
         let arguments = ProcessInfo.processInfo.arguments
         let defaultsName: String
@@ -99,7 +123,8 @@ struct UITestFixture {
                 persistenceURL: root.appendingPathComponent("library-index.json"),
                 fileManager: fileManager,
                 watchesFileSystem: false
-            )
+            ),
+            metadataStore: metadataStore
         )
     }
 }

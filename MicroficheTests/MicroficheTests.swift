@@ -928,6 +928,32 @@ final class MicroficheTests: XCTestCase {
         XCTAssertFalse(LibraryBrowsingRecovery.inspectorHasContent(reconnected))
     }
 
+    func testFilteringPreservesVisibleSelectionAndDetailAndRemovesOnlyHiddenItems() {
+        let first = ImageFile(url: URL(fileURLWithPath: "/Photos/first.jpg"))
+        let second = ImageFile(url: URL(fileURLWithPath: "/Photos/second.jpg"))
+        let initial = LibraryBrowsingState(
+            selectedIDs: [first.id, second.id],
+            focusedID: first.id,
+            detailID: first.id,
+            isQuickPreviewPresented: true
+        )
+
+        let repeatedVisible = LibraryBrowsingRecovery.reconciling(
+            LibraryBrowsingRecovery.reconciling(initial, with: [first, second]),
+            with: [first, second]
+        )
+        XCTAssertEqual(repeatedVisible, initial)
+
+        let firstHidden = LibraryBrowsingRecovery.reconciling(
+            repeatedVisible,
+            with: [second]
+        )
+        XCTAssertEqual(firstHidden.selectedIDs, [second.id])
+        XCTAssertNil(firstHidden.focusedID)
+        XCTAssertNil(firstHidden.detailID)
+        XCTAssertFalse(firstHidden.isQuickPreviewPresented)
+    }
+
     func testVisibleFolderIDsExcludeUnavailableLocations() {
         let onlineID = UUID()
         let offlineID = UUID()
@@ -1150,26 +1176,91 @@ final class MicroficheTests: XCTestCase {
         )
     }
 
-    func testLibraryFilteringMatchesNamesTypesAndMetadata() {
+    func testLibraryFilteringMatchesNamesPathsAndResolvedMetadata() {
         let file = ImageFile(url: URL(fileURLWithPath: "/Photos/sunset.JPG"))
-        let metadata = ImageMetadata(
+        let metadata = ResolvedImageMetadata(
+            label: .red,
             tags: ["Travel"],
-            labels: ["Favorite"],
             comments: "Golden hour",
             whereFrom: "Seattle"
         )
 
         XCTAssertTrue(LibraryFiltering.matches(
-            file: file, metadata: metadata, query: "golden", fileType: "jpg", tag: "travel"
+            file: file,
+            metadata: metadata,
+            query: "golden",
+            fileType: "jpg",
+            tag: "travel",
+            label: .red
         ))
         XCTAssertTrue(LibraryFiltering.matches(
-            file: file, metadata: metadata, query: "Photos", fileType: "", tag: ""
+            file: file,
+            metadata: metadata,
+            query: "Photos",
+            fileType: "",
+            tag: "",
+            label: .none
+        ))
+        for query in ["sunset", "travel", "red", "Seattle"] {
+            XCTAssertTrue(LibraryFiltering.matches(
+                file: file,
+                metadata: metadata,
+                query: query,
+                fileType: "",
+                tag: "",
+                label: .none
+            ))
+        }
+    }
+
+    func testLibraryFilteringComposesTypeTagAndFinderLabelAndCanReset() {
+        let file = ImageFile(url: URL(fileURLWithPath: "/Photos/sunset.JPG"))
+        let metadata = ResolvedImageMetadata(
+            label: .red,
+            tags: ["Travel"],
+            comments: "Golden hour",
+            whereFrom: "Seattle"
+        )
+
+        XCTAssertTrue(LibraryFiltering.matches(
+            file: file,
+            metadata: metadata,
+            query: "",
+            fileType: "jpg",
+            tag: "travel",
+            label: .red
         ))
         XCTAssertFalse(LibraryFiltering.matches(
-            file: file, metadata: metadata, query: "golden", fileType: "png", tag: "travel"
+            file: file,
+            metadata: metadata,
+            query: "",
+            fileType: "png",
+            tag: "travel",
+            label: .red
         ))
         XCTAssertFalse(LibraryFiltering.matches(
-            file: file, metadata: metadata, query: "desert", fileType: "jpg", tag: ""
+            file: file,
+            metadata: metadata,
+            query: "",
+            fileType: "jpg",
+            tag: "portrait",
+            label: .red
+        ))
+        XCTAssertFalse(LibraryFiltering.matches(
+            file: file,
+            metadata: metadata,
+            query: "",
+            fileType: "jpg",
+            tag: "travel",
+            label: .blue
+        ))
+        XCTAssertTrue(LibraryFiltering.matches(
+            file: file,
+            metadata: metadata,
+            query: "",
+            fileType: "",
+            tag: "",
+            label: .none
         ))
     }
 

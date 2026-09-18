@@ -8,10 +8,11 @@ import Foundation
 enum LibraryFiltering {
     static func matches(
         file: ImageFile,
-        metadata: ImageMetadata,
+        metadata: ResolvedImageMetadata,
         query: String,
         fileType: String,
-        tag: String
+        tag: String,
+        label: FinderLabel
     ) -> Bool {
         if !fileType.isEmpty,
            file.url.pathExtension.lowercased() != fileType.lowercased() {
@@ -22,6 +23,10 @@ enum LibraryFiltering {
             let normalizedTag = tag.lowercased()
             let hasTag = metadata.tags.contains { $0.lowercased() == normalizedTag }
             if !hasTag { return false }
+        }
+
+        if label != .none, metadata.label != label {
+            return false
         }
 
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -35,7 +40,8 @@ enum LibraryFiltering {
         if metadata.tags.contains(where: { $0.localizedStandardContains(normalizedQuery) }) {
             return true
         }
-        if metadata.labels.contains(where: { $0.localizedStandardContains(normalizedQuery) }) {
+        if metadata.label != .none,
+           metadata.label.displayName.localizedStandardContains(normalizedQuery) {
             return true
         }
 

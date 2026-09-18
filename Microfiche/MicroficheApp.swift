@@ -28,6 +28,16 @@ struct MicroficheApp: App {
         .defaultPosition(.center)
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
+            CommandGroup(after: .textEditing) {
+                Button("Find in Library") {
+                    NotificationCenter.default.post(
+                        name: .microficheFocusLibrarySearch,
+                        object: nil
+                    )
+                }
+                .keyboardShortcut("f", modifiers: .command)
+            }
+
             CommandGroup(after: .newItem) {
                 Button("Move to Archive") {
                     NotificationCenter.default.post(name: .microficheMoveSelectionToArchive, object: nil)

@@ -168,7 +168,9 @@ struct BatchMetadataWriter {
                 store.save(
                     ImageMetadata(
                         tags: resolved.tags,
-                        labels: [],
+                        labels: resolved.label == .none
+                            ? []
+                            : [resolved.label.displayName],
                         comments: resolved.comments,
                         whereFrom: resolved.whereFrom
                     ),
