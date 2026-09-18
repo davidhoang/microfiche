@@ -14,13 +14,17 @@ import SwiftUI
 struct ImageDetailView: View {
     let file: ImageFile
     @Binding var isMetadataPresented: Bool
+    let metadataStore: ImageMetadataStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         extendedImageCanvas
             .inspector(isPresented: $isMetadataPresented) {
-                ImageMetadataInspectorView(files: [file])
+                ImageMetadataInspectorView(
+                    files: [file],
+                    metadataStore: metadataStore
+                )
                     .id(file.id)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
@@ -109,6 +113,7 @@ struct ImageDetailView: View {
 
 struct ImageMetadataInspectorView: View {
     let files: [ImageFile]
+    let metadataStore: ImageMetadataStore
 
     @State private var summary = BatchMetadataSummary(
         fileCount: 0,
@@ -240,7 +245,7 @@ struct ImageMetadataInspectorView: View {
             let commentsToSave = isEditingComments ? commentsDraft : comments
             let sourceToSave = isEditingWhereFrom ? whereFromDraft : whereFrom
             Task { @MainActor in
-                let writer = BatchMetadataWriter.live()
+                let writer = BatchMetadataWriter.live(store: metadataStore)
                 _ = await writer.apply(.replaceComments(commentsToSave), to: urls)
                 _ = await writer.apply(.replaceWhereFrom(sourceToSave), to: urls)
             }
@@ -490,7 +495,7 @@ struct ImageMetadataInspectorView: View {
         let resolved = files.map { file in
             BatchMetadataAggregation.resolved(
                 native: NativeFileMetadataService.load(from: file.url),
-                local: ImageMetadataStore.shared.metadata(for: file.url)
+                local: metadataStore.metadata(for: file.url)
             )
         }
         let next = BatchMetadataAggregation.summarize(resolved)
@@ -512,7 +517,7 @@ struct ImageMetadataInspectorView: View {
            let file = files.first,
            NativeFileMetadataService.load(from: file.url).label == .none,
            let migrated = FinderLabel.migrating(
-            from: ImageMetadataStore.shared.metadata(for: file.url).labels
+            from: metadataStore.metadata(for: file.url).labels
            ) {
             apply(.setLabel(migrated))
         }
@@ -547,7 +552,8 @@ struct ImageMetadataInspectorView: View {
 
         let task = Task { @MainActor in
             isSaving = urls.count > 1
-            let result = await BatchMetadataWriter.live().apply(operation, to: urls)
+            let result = await BatchMetadataWriter.live(store: metadataStore)
+                .apply(operation, to: urls)
             guard writeGeneration == generation else { return }
             isSaving = false
             writeTask = nil

@@ -53,6 +53,33 @@ final class MicroficheUITests: XCTestCase {
     }
 
     @MainActor
+    func testCommandFFocusesSearchAndRepeatedQueriesResetResults() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let first = waitForFixtureImage(1, in: app)
+        let second = waitForFixtureImage(2, in: app)
+        let searchField = app.searchFields.firstMatch
+
+        for query in ["golden", "Seattle"] {
+            app.typeKey("f", modifierFlags: .command)
+            XCTAssertTrue(
+                searchField.waitForExistence(timeout: 5),
+                "Command-F should reveal and focus the library search field"
+            )
+            searchField.typeKey("a", modifierFlags: .command)
+            searchField.typeText(query)
+            XCTAssertTrue(first.waitForExistence(timeout: 5))
+            XCTAssertTrue(second.waitForNonExistence(timeout: 5))
+
+            searchField.typeKey("a", modifierFlags: .command)
+            searchField.typeKey(.delete, modifierFlags: [])
+            XCTAssertTrue(second.waitForExistence(timeout: 5))
+            tap(first)
+        }
+    }
+
+    @MainActor
     func testInspectorCanBeToggled() throws {
         let app = configuredApp()
         app.launch()

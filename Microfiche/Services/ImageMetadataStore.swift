@@ -10,6 +10,12 @@
 
 import Foundation
 
+extension Notification.Name {
+    static let microficheImageMetadataDidChange = Notification.Name(
+        "microficheImageMetadataDidChange"
+    )
+}
+
 @MainActor
 final class ImageMetadataStore {
     static let shared = ImageMetadataStore()
@@ -70,6 +76,7 @@ final class ImageMetadataStore {
             records[key] = normalized
         }
         persist()
+        notifyChange()
     }
 
     func move(from oldURL: URL, to newURL: URL) {
@@ -80,6 +87,7 @@ final class ImageMetadataStore {
         if let metadata = records.removeValue(forKey: oldKey) {
             records[newKey] = metadata
             persist()
+            notifyChange()
         }
     }
 
@@ -87,6 +95,7 @@ final class ImageMetadataStore {
         let key = ImageIdentity.normalizedPath(for: url)
         guard records.removeValue(forKey: key) != nil else { return }
         persist()
+        notifyChange()
     }
 
     func remove(for urls: [URL]) {
@@ -99,6 +108,7 @@ final class ImageMetadataStore {
         }
         if didChange {
             persist()
+            notifyChange()
         }
     }
 
@@ -139,6 +149,13 @@ final class ImageMetadataStore {
         } catch {
             print("Error saving image metadata: \(error)")
         }
+    }
+
+    private func notifyChange() {
+        NotificationCenter.default.post(
+            name: .microficheImageMetadataDidChange,
+            object: self
+        )
     }
 
     // MARK: - Legacy Migration
