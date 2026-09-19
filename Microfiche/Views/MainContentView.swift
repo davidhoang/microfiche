@@ -495,6 +495,7 @@ struct ImageGridView: View {
     let onAddToContactSheet: (UUID, URL) -> Void
     let onArchive: (ImageFile) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @StateObject private var prefetcher = ViewportImagePrefetcher()
 
     var body: some View {
         GeometryReader { geometry in
@@ -508,7 +509,7 @@ struct ImageGridView: View {
                         alignment: .leading,
                         spacing: Layout.spacing
                     ) {
-                        ForEach(imageFiles) { file in
+                        ForEach(Array(imageFiles.enumerated()), id: \.element.id) { index, file in
                             GridCell(
                                 file: file,
                                 isSelected: selectedImageFileIDs.contains(file.id),
@@ -526,8 +527,15 @@ struct ImageGridView: View {
                             .id(file.id)
                             .onAppear {
                                 guard !isResizing else { return }
-                                ImagePrefetcher.prefetchNearby(
-                                    for: file,
+                                prefetcher.itemDidAppear(
+                                    at: index,
+                                    in: imageFiles,
+                                    thumbnailSize: GridThumbnailSizing.decodeSize
+                                )
+                            }
+                            .onDisappear {
+                                prefetcher.itemDidDisappear(
+                                    at: index,
                                     in: imageFiles,
                                     thumbnailSize: GridThumbnailSizing.decodeSize
                                 )
@@ -546,6 +554,19 @@ struct ImageGridView: View {
                 }
                 .onChange(of: thumbnailSize) {
                     updateColumnCount(for: geometry.size.width)
+                }
+                .onChange(of: imageFiles.map(\.id)) {
+                    prefetcher.refresh(
+                        imageFiles: imageFiles,
+                        thumbnailSize: GridThumbnailSizing.decodeSize
+                    )
+                }
+                .onChange(of: focusedImageFileID) { _, id in
+                    prefetcher.prioritize(
+                        id: id,
+                        in: imageFiles,
+                        thumbnailSize: GridThumbnailSizing.decodeSize
+                    )
                 }
                 .onChange(of: isResizing) { _, resizing in
                     if !resizing {
@@ -573,6 +594,9 @@ struct ImageGridView: View {
             value: thumbnailSize
         )
         .accessibilityIdentifier("image.grid")
+        .onDisappear {
+            prefetcher.cancel()
+        }
     }
 
     private func updateColumnCount(for width: CGFloat) {
@@ -681,12 +705,13 @@ struct ImageListView: View {
     let onAddToContactSheet: (UUID, URL) -> Void
     let onArchive: (ImageFile) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @StateObject private var prefetcher = ViewportImagePrefetcher()
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 2) {
-                    ForEach(imageFiles) { file in
+                    ForEach(Array(imageFiles.enumerated()), id: \.element.id) { index, file in
                         ImageListRow(
                             file: file,
                             isSelected: selectedImageFileIDs.contains(file.id),
@@ -700,11 +725,17 @@ struct ImageListView: View {
                         )
                         .id(file.id)
                         .onAppear {
-                            ImagePrefetcher.prefetchNearby(
-                                for: file,
+                            prefetcher.itemDidAppear(
+                                at: index,
                                 in: imageFiles,
-                                thumbnailSize: 40,
-                                thumbnailRange: 10
+                                thumbnailSize: 40
+                            )
+                        }
+                        .onDisappear {
+                            prefetcher.itemDidDisappear(
+                                at: index,
+                                in: imageFiles,
+                                thumbnailSize: 40
                             )
                         }
                     }
@@ -720,8 +751,21 @@ struct ImageListView: View {
                     DispatchQueue.main.async { scrollToID = nil }
                 }
             }
+            .onChange(of: imageFiles.map(\.id)) {
+                prefetcher.refresh(imageFiles: imageFiles, thumbnailSize: 40)
+            }
+            .onChange(of: focusedImageFileID) { _, id in
+                prefetcher.prioritize(
+                    id: id,
+                    in: imageFiles,
+                    thumbnailSize: 40
+                )
+            }
         }
         .accessibilityIdentifier("image.list")
+        .onDisappear {
+            prefetcher.cancel()
+        }
     }
 }
 
