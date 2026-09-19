@@ -151,6 +151,94 @@ final class MicroficheTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(GridThumbnailSizing.decodeSize, GridThumbnailSizing.defaultValue)
     }
 
+    func testPrefetchPolicyBiasesForwardAndBackwardScrollDirection() {
+        let forward = ImagePrefetchPolicy.plan(
+            visibleRange: 10...14,
+            previousVisibleRange: 5...9,
+            itemCount: 100,
+            memoryPressure: .normal
+        )
+        XCTAssertEqual(forward.direction, .forward)
+        XCTAssertEqual(Array(forward.thumbnailIndices.prefix(3)), [15, 16, 17])
+        XCTAssertEqual(forward.previewIndices, [14, 15, 16, 17, 18, 9])
+
+        let backward = ImagePrefetchPolicy.plan(
+            visibleRange: 10...14,
+            previousVisibleRange: 15...19,
+            itemCount: 100,
+            memoryPressure: .normal
+        )
+        XCTAssertEqual(backward.direction, .backward)
+        XCTAssertEqual(Array(backward.thumbnailIndices.prefix(3)), [9, 8, 7])
+        XCTAssertEqual(backward.previewIndices, [10, 9, 15])
+    }
+
+    func testPrefetchPolicyAdaptsToMemoryPressure() {
+        let normal = ImagePrefetchPolicy.plan(
+            visibleRange: 20...24,
+            previousVisibleRange: 15...19,
+            itemCount: 100,
+            memoryPressure: .normal
+        )
+        let constrained = ImagePrefetchPolicy.plan(
+            visibleRange: 20...24,
+            previousVisibleRange: 15...19,
+            itemCount: 100,
+            memoryPressure: .constrained
+        )
+        let critical = ImagePrefetchPolicy.plan(
+            visibleRange: 20...24,
+            previousVisibleRange: 15...19,
+            itemCount: 100,
+            memoryPressure: .critical
+        )
+
+        XCTAssertGreaterThan(normal.thumbnailIndices.count, constrained.thumbnailIndices.count)
+        XCTAssertGreaterThan(normal.previewIndices.count, constrained.previewIndices.count)
+        XCTAssertEqual(critical.thumbnailIndices, [25, 26])
+        XCTAssertTrue(critical.previewIndices.isEmpty)
+    }
+
+    func testPrefetchPolicyHandlesIdleEdgesAndEmptyLibraries() {
+        let initial = ImagePrefetchPolicy.plan(
+            visibleRange: 0...3,
+            previousVisibleRange: nil,
+            itemCount: 6,
+            memoryPressure: .normal
+        )
+        XCTAssertEqual(initial.direction, .stationary)
+        XCTAssertEqual(initial.thumbnailIndices, [4, 5])
+        XCTAssertTrue(initial.thumbnailIndices.allSatisfy { (0..<6).contains($0) })
+
+        let empty = ImagePrefetchPolicy.plan(
+            visibleRange: 0...0,
+            previousVisibleRange: nil,
+            itemCount: 0,
+            memoryPressure: .normal
+        )
+        XCTAssertTrue(empty.thumbnailIndices.isEmpty)
+        XCTAssertTrue(empty.previewIndices.isEmpty)
+    }
+
+    func testPrefetchRequestSetCancelsObsoleteWorkAcrossRepeatedUpdates() {
+        var requests = ImagePrefetchRequestSet()
+        let first = requests.replace(with: ["thumb-1", "thumb-2", "preview-1"])
+        XCTAssertEqual(first.added, ["thumb-1", "thumb-2", "preview-1"])
+        XCTAssertTrue(first.cancelled.isEmpty)
+
+        let reverse = requests.replace(with: ["thumb-0", "thumb-1", "preview-0"])
+        XCTAssertEqual(reverse.cancelled, ["thumb-2", "preview-1"])
+        XCTAssertEqual(reverse.added, ["thumb-0", "preview-0"])
+
+        let repeated = requests.replace(with: ["thumb-0", "thumb-1", "preview-0"])
+        XCTAssertTrue(repeated.cancelled.isEmpty)
+        XCTAssertTrue(repeated.added.isEmpty)
+
+        let cancelled = requests.replace(with: [])
+        XCTAssertEqual(cancelled.cancelled, ["thumb-0", "thumb-1", "preview-0"])
+        XCTAssertTrue(cancelled.added.isEmpty)
+    }
+
     func testReducedMotionDisablesEverySharedAnimationToken() {
         XCTAssertFalse(UITestHost.reduceMotion)
         XCTAssertTrue(MicroficheMotion.isEnabled(reducedMotion: false))
