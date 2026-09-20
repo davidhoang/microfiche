@@ -204,7 +204,9 @@ struct ContentView: View {
     @State private var selectedFileType = ""
     @State private var selectedTag = ""
     @State private var selectedLabel = FinderLabel.none
-    @State private var searchMetadataByFileID: [UUID: ResolvedImageMetadata] = [:]
+    @State private var sortOption = LibrarySortOption.name
+    @State private var sortDirection = LibrarySortDirection.ascending
+    @State private var searchMetadataByFileID: [UUID: LibraryItemMetadata] = [:]
     @State private var metadataRevision: UInt64 = 0
     @AppStorage private var lastSelectedLibraryFolderID: String
     private let metadataStore: ImageMetadataStore
@@ -303,6 +305,12 @@ struct ContentView: View {
                 }
                 .onChange(of: selectedLabel) {
                     pruneSelectionToVisibleFiles()
+                }
+                .onChange(of: sortOption) {
+                    requestScrollToFocusedImage()
+                }
+                .onChange(of: sortDirection) {
+                    requestScrollToFocusedImage()
                 }
                 .onReceive(
                     NotificationCenter.default.publisher(
@@ -713,6 +721,11 @@ struct ContentView: View {
             }
             .hideSharedBackgroundIfAvailable()
 
+            ToolbarItem {
+                sortMenu
+            }
+            .hideSharedBackgroundIfAvailable()
+
             if let activeContactSheet {
                 ToolbarItem {
                     Button {
@@ -759,7 +772,7 @@ struct ContentView: View {
 
     private var displayedImageFiles: [ImageFile] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return imageFiles.filter { file in
+        let filtered = imageFiles.filter { file in
             LibraryFiltering.matches(
                 file: file,
                 metadata: searchMetadata(
@@ -770,6 +783,16 @@ struct ContentView: View {
                 fileType: selectedFileType,
                 tag: selectedTag,
                 label: selectedLabel
+            )
+        }
+        return LibrarySorting.sorted(
+            filtered,
+            by: sortOption,
+            direction: sortDirection
+        ) { file in
+            searchMetadata(
+                for: file,
+                local: metadataStore.metadata(for: file.url)
             )
         }
     }
@@ -783,7 +806,7 @@ struct ContentView: View {
     private var availableTags: [String] {
         var tags = Set(metadataStore.allTags(for: imageFiles.map(\.url)))
         for metadata in searchMetadataByFileID.values {
-            tags.formUnion(metadata.tags)
+            tags.formUnion(metadata.resolved.tags)
         }
         return tags.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
@@ -799,9 +822,14 @@ struct ContentView: View {
     private func searchMetadata(
         for file: ImageFile,
         local: ImageMetadata
-    ) -> ResolvedImageMetadata {
+    ) -> LibraryItemMetadata {
         searchMetadataByFileID[file.id]
-            ?? BatchMetadataAggregation.resolved(native: .empty, local: local)
+            ?? LibraryItemMetadata(
+                resolved: BatchMetadataAggregation.resolved(
+                    native: .empty,
+                    local: local
+                )
+            )
     }
 
     private func reloadSearchMetadata() async {
@@ -814,13 +842,24 @@ struct ContentView: View {
         }
 
         let loadTask = Task.detached(priority: .utility) {
-            var loaded: [UUID: ResolvedImageMetadata] = [:]
+            var loaded: [UUID: LibraryItemMetadata] = [:]
             loaded.reserveCapacity(inputs.count)
             for input in inputs {
                 guard !Task.isCancelled else { break }
-                loaded[input.fileID] = BatchMetadataAggregation.resolved(
+                let resolved = BatchMetadataAggregation.resolved(
                     native: NativeFileMetadataService.load(from: input.url),
                     local: input.local
+                )
+                let technical = try? PhotoMetadataReader.read(from: input.url)
+                let modificationDate = (
+                    try? input.url.resourceValues(
+                        forKeys: [.contentModificationDateKey]
+                    )
+                )?.contentModificationDate
+                loaded[input.fileID] = LibraryItemMetadata(
+                    resolved: resolved,
+                    technical: technical,
+                    modificationDate: modificationDate
                 )
             }
             return loaded
@@ -834,6 +873,7 @@ struct ContentView: View {
         guard !Task.isCancelled else { return }
         searchMetadataByFileID = loaded
         pruneSelectionToVisibleFiles()
+        requestScrollToFocusedImage()
     }
 
     private var filterAccessibilityValue: String {
@@ -892,6 +932,49 @@ struct ContentView: View {
         .accessibilityLabel("Filter library")
         .accessibilityValue(filterAccessibilityValue)
         .accessibilityIdentifier("library.filter")
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort By", selection: $sortOption) {
+                ForEach(LibrarySortOption.allCases) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+
+            Divider()
+
+            Picker("Direction", selection: $sortDirection) {
+                Text(sortAscendingLabel).tag(LibrarySortDirection.ascending)
+                Text(sortDescendingLabel).tag(LibrarySortDirection.descending)
+            }
+        } label: {
+            Image(systemName: sortDirection == .ascending
+                ? "arrow.up.arrow.down.circle"
+                : "arrow.down.arrow.up.circle")
+        }
+        .help("Sort Library")
+        .accessibilityLabel("Sort library")
+        .accessibilityValue(
+            "\(sortOption.displayName), \(sortDirection == .ascending ? sortAscendingLabel : sortDescendingLabel)"
+        )
+        .accessibilityIdentifier("library.sort")
+    }
+
+    private var sortAscendingLabel: String {
+        switch sortOption {
+        case .name: "A to Z"
+        case .captureDate, .dateModified: "Oldest First"
+        case .finderLabel: "Label A to Z"
+        }
+    }
+
+    private var sortDescendingLabel: String {
+        switch sortOption {
+        case .name: "Z to A"
+        case .captureDate, .dateModified: "Newest First"
+        case .finderLabel: "Label Z to A"
+        }
     }
 
     private var activeContactSheet: ContactSheet? {

@@ -44,6 +44,7 @@ final class MicroficheUITests: XCTestCase {
         XCTAssertTrue(gridButton.waitForExistence(timeout: 5))
         XCTAssertTrue(listButton.waitForExistence(timeout: 5))
         XCTAssertTrue(element("library.filter", in: app).exists)
+        XCTAssertTrue(element("library.sort", in: app).exists)
         XCTAssertTrue(element("inspector.toggle", in: app).exists)
 
         selectViewMode("list", in: app)
@@ -76,6 +77,39 @@ final class MicroficheUITests: XCTestCase {
             searchField.typeKey(.delete, modifierFlags: [])
             XCTAssertTrue(second.waitForExistence(timeout: 5))
             tap(first)
+        }
+    }
+
+    @MainActor
+    func testLibrarySortCanChangeFieldAndDirectionRepeatedly() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let sortMenu = element("library.sort", in: app)
+        XCTAssertTrue(sortMenu.waitForExistence(timeout: 8))
+
+        for _ in 1...2 {
+            tap(sortMenu)
+            XCTAssertTrue(app.menuItems["Capture Date"].waitForExistence(timeout: 5))
+            app.menuItems["Capture Date"].click()
+
+            tap(sortMenu)
+            XCTAssertTrue(app.menuItems["Newest First"].waitForExistence(timeout: 5))
+            app.menuItems["Newest First"].click()
+
+            tap(sortMenu)
+            XCTAssertTrue(app.menuItems["Name"].waitForExistence(timeout: 5))
+            app.menuItems["Name"].click()
+
+            tap(sortMenu)
+            XCTAssertTrue(app.menuItems["A to Z"].waitForExistence(timeout: 5))
+            app.menuItems["A to Z"].click()
+
+            let first = waitForFixtureImage(1, in: app)
+            let second = waitForFixtureImage(2, in: app)
+            tap(first)
+            tap(second)
+            XCTAssertTrue(waitUntilChosen(second))
         }
     }
 

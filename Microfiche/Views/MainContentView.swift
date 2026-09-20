@@ -38,6 +38,7 @@ enum ImageCellEventRouting {
             && !identifier.hasPrefix("inspector.")
             && !identifier.hasPrefix("sidebar.")
             && identifier != "library.filter"
+            && identifier != "library.sort"
             && identifier != "library.sidebar"
     }
 
@@ -411,7 +412,7 @@ private struct EmptyLibraryStateView: View {
             return locationRecovery.message
         }
         if isFiltering {
-            return "Try a different name, tag, file type, or clear the active filters."
+            return "Try a different name, camera, lens, date, tag, file type, or clear the active filters."
         }
         if let activeContactSheet {
             return "Drag image files into \(activeContactSheet.name) or drop them on its sidebar item."

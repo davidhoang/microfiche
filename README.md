@@ -9,8 +9,9 @@ Microfiche is a native macOS image library for browsing folders in place. It lin
 - Multiple linked folders and remembered external drives
 - iCloud Drive naming, placeholder status, and download recovery
 - Contact sheets with drag and drop
-- Search by filename, path, tags, labels, comments, and source
+- Search by filename, path, tags, labels, comments, source, camera, lens, and capture date
 - File-type and tag filters
+- Sort by name, capture date, Finder label, or modification date
 - Local tags, labels, comments, and source metadata
 - EXIF/ImageIO camera and exposure details
 - Quick preview and focused detail view
