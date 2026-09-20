@@ -475,6 +475,13 @@ final class MicroficheTests: XCTestCase {
             ImageCellEventRouting.shouldSelectCell(
                 locationInView: CGPoint(x: 10, y: 10),
                 viewBounds: bounds,
+                coveringAccessibilityIdentifier: "library.sort"
+            )
+        )
+        XCTAssertFalse(
+            ImageCellEventRouting.shouldSelectCell(
+                locationInView: CGPoint(x: 10, y: 10),
+                viewBounds: bounds,
                 coveringAccessibilityIdentifier: nil,
                 coveringIsAppKitButton: true
             )
@@ -1350,6 +1357,138 @@ final class MicroficheTests: XCTestCase {
             tag: "",
             label: .none
         ))
+    }
+
+    func testLibraryFilteringMatchesCameraLensAndCaptureDate() {
+        let file = ImageFile(url: URL(fileURLWithPath: "/Photos/portrait.jpg"))
+        let metadata = LibraryItemMetadata(
+            resolved: ResolvedImageMetadata(
+                label: .none,
+                tags: [],
+                comments: "",
+                whereFrom: ""
+            ),
+            technical: PhotoTechnicalMetadata(
+                dimensions: "6000 × 4000",
+                captured: "2025:04:19 14:32:05",
+                camera: "Fujifilm X-T5",
+                lens: "XF33mmF1.4 R LM WR",
+                iso: "125",
+                aperture: "ƒ/2.0",
+                shutterSpeed: "1/500 s"
+            )
+        )
+
+        for query in ["fujifilm", "X-T5", "33mm", "2025", "14:32"] {
+            XCTAssertTrue(LibraryFiltering.matches(
+                file: file,
+                metadata: metadata,
+                query: query,
+                fileType: "",
+                tag: "",
+                label: .none
+            ), "Expected EXIF query \(query) to match")
+        }
+        XCTAssertFalse(LibraryFiltering.matches(
+            file: file,
+            metadata: metadata,
+            query: "Leica",
+            fileType: "",
+            tag: "",
+            label: .none
+        ))
+    }
+
+    func testLibrarySortingCoversEveryFieldDirectionAndMissingMetadata() throws {
+        let alpha = ImageFile(url: URL(fileURLWithPath: "/Photos/alpha.jpg"))
+        let beta = ImageFile(url: URL(fileURLWithPath: "/Photos/beta.jpg"))
+        let missing = ImageFile(url: URL(fileURLWithPath: "/Photos/missing.jpg"))
+        let oldDate = Date(timeIntervalSince1970: 100)
+        let newDate = Date(timeIntervalSince1970: 200)
+
+        let metadata: [UUID: LibraryItemMetadata] = [
+            alpha.id: LibraryItemMetadata(
+                resolved: ResolvedImageMetadata(
+                    label: .red,
+                    tags: [],
+                    comments: "",
+                    whereFrom: ""
+                ),
+                technical: PhotoTechnicalMetadata(
+                    dimensions: nil,
+                    captured: "2020:01:02 03:04:05",
+                    camera: nil,
+                    lens: nil,
+                    iso: nil,
+                    aperture: nil,
+                    shutterSpeed: nil
+                ),
+                modificationDate: oldDate
+            ),
+            beta.id: LibraryItemMetadata(
+                resolved: ResolvedImageMetadata(
+                    label: .blue,
+                    tags: [],
+                    comments: "",
+                    whereFrom: ""
+                ),
+                technical: PhotoTechnicalMetadata(
+                    dimensions: nil,
+                    captured: "2024:01:02 03:04:05",
+                    camera: nil,
+                    lens: nil,
+                    iso: nil,
+                    aperture: nil,
+                    shutterSpeed: nil
+                ),
+                modificationDate: newDate
+            ),
+            missing.id: LibraryItemMetadata(
+                resolved: ResolvedImageMetadata(
+                    label: .none,
+                    tags: [],
+                    comments: "",
+                    whereFrom: ""
+                )
+            )
+        ]
+        let files = [missing, beta, alpha]
+        let lookup: (ImageFile) -> LibraryItemMetadata = {
+            try! XCTUnwrap(metadata[$0.id])
+        }
+
+        XCTAssertEqual(
+            LibrarySorting.sorted(files, by: .name, direction: .ascending, metadata: lookup),
+            [alpha, beta, missing]
+        )
+        XCTAssertEqual(
+            LibrarySorting.sorted(files, by: .name, direction: .descending, metadata: lookup),
+            [missing, beta, alpha]
+        )
+        XCTAssertEqual(
+            LibrarySorting.sorted(files, by: .captureDate, direction: .ascending, metadata: lookup),
+            [alpha, beta, missing]
+        )
+        XCTAssertEqual(
+            LibrarySorting.sorted(files, by: .captureDate, direction: .descending, metadata: lookup),
+            [beta, alpha, missing]
+        )
+        XCTAssertEqual(
+            LibrarySorting.sorted(files, by: .dateModified, direction: .ascending, metadata: lookup),
+            [alpha, beta, missing]
+        )
+        XCTAssertEqual(
+            LibrarySorting.sorted(files, by: .dateModified, direction: .descending, metadata: lookup),
+            [beta, alpha, missing]
+        )
+        XCTAssertEqual(
+            LibrarySorting.sorted(files, by: .finderLabel, direction: .ascending, metadata: lookup),
+            [beta, alpha, missing]
+        )
+        XCTAssertEqual(
+            LibrarySorting.sorted(files, by: .finderLabel, direction: .descending, metadata: lookup),
+            [alpha, beta, missing]
+        )
     }
 
     func testLibraryLocationPresentationRecognizesICloudDrivePaths() {
