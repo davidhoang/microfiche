@@ -72,6 +72,41 @@ private final class NonHitTestingClickMonitorView: NSView {
     }
 }
 
+/// SwiftUI controls can share an NSHostingView, so AppKit hit-testing alone
+/// cannot distinguish a floating control from the image underneath it.
+final class ImageCellClickExclusionView: NSView {
+    private static let regions = NSHashTable<ImageCellClickExclusionView>.weakObjects()
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            Self.regions.add(self)
+        } else {
+            Self.regions.remove(self)
+        }
+    }
+
+    static func contains(_ locationInWindow: CGPoint, in window: NSWindow) -> Bool {
+        regions.allObjects.contains { region in
+            let point = region.convert(locationInWindow, from: nil)
+            return region.window === window
+                && !region.isHiddenOrHasHiddenAncestor
+                && region.bounds.contains(point)
+                && region.visibleRect.contains(point)
+        }
+    }
+}
+
+private struct ImageCellClickExclusion: NSViewRepresentable {
+    func makeNSView(context: Context) -> ImageCellClickExclusionView {
+        ImageCellClickExclusionView()
+    }
+
+    func updateNSView(_ nsView: ImageCellClickExclusionView, context: Context) {}
+}
+
 private struct ImageCellClickMonitor: NSViewRepresentable {
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
@@ -92,7 +127,10 @@ private struct ImageCellClickMonitor: NSViewRepresentable {
             monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
                 guard let self,
                       let view = self.view,
-                      event.window === view.window else { return event }
+                      let window = event.window,
+                      window === view.window,
+                      !ImageCellClickExclusionView.contains(event.locationInWindow, in: window)
+                else { return event }
 
                 let location = view.convert(event.locationInWindow, from: nil)
                 let hitView = event.window?.contentView?.hitTest(event.locationInWindow)
@@ -275,6 +313,7 @@ struct MainContentView: View {
         .overlay(alignment: .bottom) {
             if showsToolbar {
                 FloatingViewModeControl(selection: $viewMode)
+                    .background(ImageCellClickExclusion())
                     .padding(.bottom, 16)
                     .zIndex(1)
                     .transition(.opacity)

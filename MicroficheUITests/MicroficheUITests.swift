@@ -452,6 +452,65 @@ final class MicroficheUITests: XCTestCase {
     }
 
     @MainActor
+    func testViewModeSwitchingPreservesSelectionAndKeyboardFocusRepeatedly() throws {
+        let app = configuredApp()
+        app.launch()
+        let third = waitForFixtureImage(3, in: app)
+        let fourth = waitForFixtureImage(4, in: app)
+        let fifth = waitForFixtureImage(5, in: app)
+        let inspector = button("inspector.toggle", in: app)
+
+        func clickMode(_ mode: String) {
+            let control = button("viewMode.\(mode)", in: app)
+            tap(control)
+            XCTAssertTrue(waitUntilChosen(control), "Pointer click must switch views without a keyboard fallback")
+        }
+
+        for _ in 0..<2 {
+            // The floating control must not select an image underneath it.
+            for mode in ["list", "grid", "list"] {
+                clickMode(mode)
+                XCTAssertFalse(inspector.isEnabled, "Switching views must preserve an empty selection")
+            }
+
+            tap(third)
+            tap(inspector)
+            waitForInspectorFile("fixture-03.png", in: app)
+            for mode in ["grid", "list"] {
+                clickMode(mode)
+                XCTAssertTrue(waitUntilChosen(third))
+                waitForInspectorFile("fixture-03.png", in: app)
+            }
+            tap(inspector)
+            app.typeKey(.rightArrow, modifierFlags: [])
+            XCTAssertTrue(waitUntilChosen(fourth), "Keyboard navigation must continue from the preserved focus")
+            XCTAssertTrue(waitUntilNotChosen(third))
+
+            XCUIElement.perform(withKeyModifiers: .command) { tap(fifth) }
+            for mode in ["grid", "list"] {
+                clickMode(mode)
+                XCTAssertTrue(waitUntilChosen(fourth))
+                XCTAssertTrue(waitUntilChosen(fifth))
+            }
+            app.typeKey(.escape, modifierFlags: [])
+            XCTAssertTrue(waitUntilNotChosen(fourth))
+            XCTAssertTrue(waitUntilNotChosen(fifth))
+
+            // Exercise rows created after scrolling and both view directions.
+            element("image.list", in: app).scroll(byDeltaX: 0, deltaY: -1000)
+            let last = waitForFixtureImage(24, in: app)
+            tap(last)
+            for mode in ["grid", "list"] {
+                clickMode(mode)
+                XCTAssertTrue(waitUntilChosen(last))
+            }
+            app.typeKey(.escape, modifierFlags: [])
+            XCTAssertTrue(waitUntilNotChosen(last))
+            element("image.list", in: app).scroll(byDeltaX: 0, deltaY: 1000)
+        }
+    }
+
+    @MainActor
     func testDoubleClickDragAndContextMenuDoNotDisableLaterClicks() throws {
         let app = configuredApp()
         app.launch()

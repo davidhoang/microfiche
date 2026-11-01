@@ -488,6 +488,36 @@ final class MicroficheTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testFloatingControlExclusionTracksWindowVisibilityAndLayout() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        let otherWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                                   styleMask: .borderless, backing: .buffered, defer: false)
+        let container = NSView(frame: NSRect(x: 20, y: 30, width: 200, height: 100))
+        let region = ImageCellClickExclusionView(frame: NSRect(x: 10, y: 10, width: 80, height: 30))
+        window.contentView!.addSubview(container)
+        for _ in 0..<2 {
+            container.addSubview(region)
+            let point = region.convert(CGPoint(x: 20, y: 10), to: nil)
+            XCTAssertTrue(ImageCellClickExclusionView.contains(point, in: window))
+            XCTAssertFalse(ImageCellClickExclusionView.contains(point, in: otherWindow))
+            XCTAssertFalse(ImageCellClickExclusionView.contains(CGPoint(x: 300, y: 200), in: window))
+            XCTAssertNil(region.hitTest(CGPoint(x: 20, y: 10)), "SwiftUI must still receive the click")
+
+            container.isHidden = true
+            XCTAssertFalse(ImageCellClickExclusionView.contains(point, in: window))
+            container.isHidden = false
+            region.setFrameOrigin(NSPoint(x: 100, y: 10))
+            XCTAssertFalse(ImageCellClickExclusionView.contains(point, in: window))
+            XCTAssertTrue(ImageCellClickExclusionView.contains(
+                region.convert(CGPoint(x: 20, y: 10), to: nil), in: window))
+            region.removeFromSuperview()
+            XCTAssertFalse(ImageCellClickExclusionView.contains(point, in: window))
+            region.setFrameOrigin(NSPoint(x: 10, y: 10))
+        }
+    }
+
     func testLibrarySelectionTransitionCoversPointerKeyboardAndRemovalMatrixTwice() {
         let displayed = (1...8).map { index in
             UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index))!
