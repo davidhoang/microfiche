@@ -11,8 +11,9 @@ struct NativeFileMetadata: Equatable, Sendable {
     var label: FinderLabel
     var tagNames: [String]
     var comment: String
+    var isReadable = true
 
-    static let empty = NativeFileMetadata(label: .none, tagNames: [], comment: "")
+    static let empty = NativeFileMetadata(label: .none, tagNames: [], comment: "", isReadable: false)
 }
 
 enum NativeFileMetadataService {
@@ -21,7 +22,11 @@ enum NativeFileMetadataService {
     private static let finderTagsAttribute = "com.apple.metadata:_kMDItemUserTags"
 
     static func load(from url: URL) -> NativeFileMetadata {
-        let resourceValues = try? url.resourceValues(forKeys: [.labelNumberKey, .tagNamesKey])
+        // SwiftUI can retain an ImageFile's URL when its stable identity is
+        // unchanged. Discard Foundation's cached values after external edits.
+        var refreshedURL = url
+        refreshedURL.removeAllCachedResourceValues()
+        let resourceValues = try? refreshedURL.resourceValues(forKeys: [.labelNumberKey, .tagNamesKey])
         let label: FinderLabel
         var tagNames: [String] = []
 
@@ -38,7 +43,10 @@ enum NativeFileMetadataService {
         }
 
         let comment = (try? readFinderComment(from: url)) ?? ""
-        return NativeFileMetadata(label: label, tagNames: tagNames, comment: comment)
+        return NativeFileMetadata(
+            label: label, tagNames: tagNames, comment: comment,
+            isReadable: resourceValues != nil
+        )
     }
 
     static func save(_ metadata: NativeFileMetadata, for url: URL) throws {

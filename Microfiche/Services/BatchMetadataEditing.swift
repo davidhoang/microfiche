@@ -81,15 +81,18 @@ enum BatchMetadataAggregation {
         native: NativeFileMetadata,
         local: ImageMetadata
     ) -> ResolvedImageMetadata {
+        // Once a record mirrors a successful native write, an empty Finder
+        // value is a deletion, not a request to resurrect the cached copy.
+        let usesNative = local.mirrorsNativeMetadata == true && native.isReadable
         var label = native.label
-        if label == .none, let migrated = FinderLabel.migrating(from: local.labels) {
+        if !usesNative, label == .none, let migrated = FinderLabel.migrating(from: local.labels) {
             label = migrated
         }
 
         return ResolvedImageMetadata(
             label: label,
-            tags: native.tagNames.isEmpty ? local.tags : native.tagNames,
-            comments: native.comment.isEmpty ? local.comments : native.comment,
+            tags: usesNative || !native.tagNames.isEmpty ? native.tagNames : local.tags,
+            comments: usesNative || !native.comment.isEmpty ? native.comment : local.comments,
             whereFrom: local.whereFrom
         )
     }
@@ -172,7 +175,8 @@ struct BatchMetadataWriter {
                             ? []
                             : [resolved.label.displayName],
                         comments: resolved.comments,
-                        whereFrom: resolved.whereFrom
+                        whereFrom: resolved.whereFrom,
+                        mirrorsNativeMetadata: true
                     ),
                     for: url
                 )

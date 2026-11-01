@@ -14,6 +14,8 @@ struct ImageMetadata: Codable, Equatable, Sendable {
     var labels: [String]
     var comments: String
     var whereFrom: String
+    /// Nil identifies legacy local-only records that still need fallback reads.
+    var mirrorsNativeMetadata: Bool? = nil
 
     static let empty = ImageMetadata(
         tags: [],

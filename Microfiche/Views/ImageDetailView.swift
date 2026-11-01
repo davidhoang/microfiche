@@ -23,7 +23,8 @@ struct ImageDetailView: View {
             .inspector(isPresented: $isMetadataPresented) {
                 ImageMetadataInspectorView(
                     files: [file],
-                    metadataStore: metadataStore
+                    metadataStore: metadataStore,
+                    isPresented: isMetadataPresented
                 )
                     .id(file.id)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -114,6 +115,7 @@ struct ImageDetailView: View {
 struct ImageMetadataInspectorView: View {
     let files: [ImageFile]
     let metadataStore: ImageMetadataStore
+    let isPresented: Bool
 
     @State private var summary = BatchMetadataSummary(
         fileCount: 0,
@@ -238,17 +240,16 @@ struct ImageMetadataInspectorView: View {
         .task(id: technicalMetadataReloadID) {
             await loadTechnicalMetadata()
         }
+        .onChange(of: isPresented) { _, presented in
+            if presented {
+                loadMetadata()
+            } else {
+                savePendingTextEdits()
+            }
+        }
         .onDisappear {
             writeTask?.cancel()
-            guard !isBatch else { return }
-            let urls = files.map(\.url)
-            let commentsToSave = isEditingComments ? commentsDraft : comments
-            let sourceToSave = isEditingWhereFrom ? whereFromDraft : whereFrom
-            Task { @MainActor in
-                let writer = BatchMetadataWriter.live(store: metadataStore)
-                _ = await writer.apply(.replaceComments(commentsToSave), to: urls)
-                _ = await writer.apply(.replaceWhereFrom(sourceToSave), to: urls)
-            }
+            savePendingTextEdits()
         }
         .onChange(of: saveError) { _, error in
             guard let error else { return }
@@ -456,6 +457,7 @@ struct ImageMetadataInspectorView: View {
                     .foregroundStyle(fieldDisplayIsPlaceholder(field) ? .secondary : .primary)
                     .italic(fieldDisplayIsPlaceholder(field))
                     .textSelection(.enabled)
+                    .accessibilityIdentifier("\(replaceIdentifier).value")
             }
         }
     }
@@ -515,11 +517,35 @@ struct ImageMetadataInspectorView: View {
 
         if files.count == 1,
            let file = files.first,
+           metadataStore.metadata(for: file.url).mirrorsNativeMetadata != true,
            NativeFileMetadataService.load(from: file.url).label == .none,
            let migrated = FinderLabel.migrating(
             from: metadataStore.metadata(for: file.url).labels
            ) {
             apply(.setLabel(migrated))
+        }
+    }
+
+    private func savePendingTextEdits() {
+        guard !isBatch else { return }
+        let urls = files.map(\.url)
+        var pending: [BatchMetadataOperation] = []
+        if isEditingComments, commentsDraft != comments {
+            pending.append(.replaceComments(commentsDraft))
+        }
+        if isEditingWhereFrom, whereFromDraft != whereFrom {
+            pending.append(.replaceWhereFrom(whereFromDraft))
+        }
+        isEditingComments = false
+        isEditingWhereFrom = false
+        guard !pending.isEmpty else { return }
+        // A native inspector can collapse without removing its SwiftUI view.
+        // Capture drafts at the visibility change as well as on disappearance.
+        Task { @MainActor in
+            let writer = BatchMetadataWriter.live(store: metadataStore)
+            for operation in pending {
+                _ = await writer.apply(operation, to: urls)
+            }
         }
     }
 

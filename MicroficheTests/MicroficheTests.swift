@@ -840,6 +840,37 @@ final class MicroficheTests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryIndexDetectsRepeatedFinderMetadataChanges() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("microfiche-metadata-index-\(UUID().uuidString)")
+        let photos = root.appendingPathComponent("Photos", isDirectory: true)
+        try FileManager.default.createDirectory(at: photos, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = photos.appendingPathComponent("keep.jpg")
+        try Data("image".utf8).write(to: url)
+        let folder = makeLinkedFolder(url: photos)
+        let store = LibraryIndexStore(
+            persistenceURL: root.appendingPathComponent("index.json"),
+            watchesFileSystem: false
+        )
+        store.configure(folders: [folder])
+        await store.reconcile(folderID: folder.id)
+        let original = try XCTUnwrap(LibraryIndexScanner.scan(root: photos).first)
+
+        for comment in ["Golden hour", "Blue hour"] {
+            let previousRevision = store.revision
+            try NativeFileMetadataService.setComment(comment, for: url)
+            await store.reconcile(folderID: folder.id)
+            let updated = try XCTUnwrap(LibraryIndexScanner.scan(root: photos).first)
+            XCTAssertEqual(updated.modificationDate, original.modificationDate)
+            XCTAssertEqual(updated.fileSize, original.fileSize)
+            XCTAssertGreaterThan(store.revision, previousRevision,
+                "Metadata-only edits must invalidate search even when image bytes are unchanged")
+            XCTAssertEqual(store.files(for: [folder.id]).map(\.id), [ImageFile(url: url).id])
+        }
+    }
+
+    @MainActor
     func testLibraryIndexCancelsStaleReconcileAfterLocalMutation() async throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
@@ -1269,6 +1300,122 @@ final class MicroficheTests: XCTestCase {
                 mountPath: "/"
             )
         )
+    }
+
+    func testLibrarySearchLargeSnapshotAndRepeatedCancellation() async throws {
+        let files = (0..<10_000).map {
+            ImageFile(url: URL(fileURLWithPath: "/Photos/photo-\($0).jpg"))
+        }
+        let target = files[4321]
+        let metadata = [target.id: LibraryItemMetadata(resolved: .init(
+            label: .red, tags: ["Travel"], comments: "Golden hour", whereFrom: "Seattle"
+        ))]
+        let query = LibrarySearchQuery(text: "golden", fileType: "jpg", tag: "Travel", label: .red)
+        for _ in 0..<2 {
+            let canceled = Task {
+                await LibrarySearch.evaluate(files: files, metadata: metadata, query: query)
+            }
+            canceled.cancel()
+            let canceledResult = await canceled.value
+            XCTAssertNil(canceledResult)
+
+            let start = ContinuousClock.now
+            let results = await LibrarySearch.evaluate(files: files, metadata: metadata, query: query)
+            XCTAssertEqual(results?.map(\.id), [target.id])
+            XCTAssertLessThan(start.duration(to: .now), .seconds(5))
+            print("10,000-item composed query: \(start.duration(to: .now))")
+
+            let textStart = ContinuousClock.now
+            let empty = await LibrarySearch.evaluate(
+                files: files, metadata: metadata, query: .init(text: "not-in-this-library"))
+            XCTAssertEqual(empty, [])
+            XCTAssertLessThan(textStart.duration(to: .now), .seconds(5))
+            print("10,000-item text-only query: \(textStart.duration(to: .now))")
+
+            var checks = 0
+            XCTAssertNil(LibrarySearch.results(in: files, metadata: metadata, query: query) {
+                checks += 1
+                return checks == 40
+            })
+            XCTAssertEqual(checks, 40, "Canceled filtering must stop before scanning the remaining library")
+        }
+    }
+
+    func testLibrarySearchUpdatesMetadataAndPreservesOnlyValidBrowsingState() throws {
+        let first = ImageFile(url: URL(fileURLWithPath: "/Photos/first.jpg"))
+        let second = ImageFile(url: URL(fileURLWithPath: "/Photos/second.png"))
+        let initial = LibraryBrowsingState(selectedIDs: [first.id], focusedID: first.id,
+            detailID: first.id, isQuickPreviewPresented: true)
+        for _ in 0..<2 {
+            for comment in ["Golden hour", "Golden afternoon"] {
+                let metadata = [first.id: LibraryItemMetadata(resolved: .init(
+                    label: .red, tags: ["Travel"], comments: comment, whereFrom: "Seattle"
+                ))]
+                let results = try XCTUnwrap(LibrarySearch.results(
+                    in: [first, second], metadata: metadata, query: .init(text: "golden")))
+                XCTAssertEqual(LibraryBrowsingRecovery.reconciling(initial, with: results), initial)
+            }
+            let hidden = try XCTUnwrap(LibrarySearch.results(
+                in: [first, second], metadata: [:], query: .init(text: "golden")))
+            let cleared = LibraryBrowsingRecovery.reconciling(initial, with: hidden)
+            XCTAssertTrue(cleared.selectedIDs.isEmpty)
+            XCTAssertNil(cleared.detailID)
+            XCTAssertEqual(LibrarySearch.results(in: [first, second], metadata: [:], query: .init())?.count, 2)
+        }
+    }
+
+    func testNativeMetadataReloadsCachedURLAfterExternalTagEdits() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("microfiche-live-tags-\(UUID().uuidString).png")
+        try Data("fixture".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertTrue(NativeFileMetadataService.load(from: url).tagNames.isEmpty)
+        for _ in 0..<2 {
+            for tags in [["Live tag"], ["Updated tag"], []] {
+                // Write the Finder xattr directly, as another process would.
+                let data = try PropertyListSerialization.data(
+                    fromPropertyList: tags, format: .binary, options: 0)
+                try url.setExtendedAttribute(data, forName: "com.apple.metadata:_kMDItemUserTags")
+                XCTAssertEqual(NativeFileMetadataService.load(from: url).tagNames, tags)
+            }
+        }
+    }
+
+    @MainActor
+    func testMirroredMetadataHonorsFinderClearsAndKeepsSourceNotes() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("microfiche-mirror-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("image.png")
+        try Data("fixture".utf8).write(to: url)
+        let store = ImageMetadataStore(persistenceURL: root.appendingPathComponent("metadata.json"))
+        let writer = BatchMetadataWriter.live(store: store)
+        for _ in 0..<2 {
+            for operation in [BatchMetadataOperation.addTag("Travel"), .setLabel(.red),
+                              .replaceComments("Golden hour"), .replaceWhereFrom("Seattle")] {
+                let result = await writer.apply(operation, to: [url])
+                XCTAssertTrue(result.failures.isEmpty)
+            }
+            let mirrored = store.metadata(for: url)
+            XCTAssertEqual(mirrored.mirrorsNativeMetadata, true)
+            try NativeFileMetadataService.save(.empty, for: url)
+            let resolved = BatchMetadataAggregation.resolved(
+                native: NativeFileMetadataService.load(from: url), local: mirrored)
+            XCTAssertTrue(resolved.tags.isEmpty)
+            XCTAssertEqual(resolved.label, .none)
+            XCTAssertEqual(resolved.comments, "")
+            XCTAssertEqual(resolved.whereFrom, "Seattle")
+            let unavailable = BatchMetadataAggregation.resolved(native: .empty, local: mirrored)
+            XCTAssertEqual(unavailable.tags, ["Travel"], "Keep cached metadata when native reads fail")
+        }
+    }
+
+    func testLibraryIndexDecodesEntriesBeforeMetadataTracking() throws {
+        let data = Data(#"{"path":"/Photos/old.jpg","fileSize":42}"#.utf8)
+        let entry = try JSONDecoder().decode(LibraryIndexEntry.self, from: data)
+        XCTAssertNil(entry.metadataChangeDate)
+        XCTAssertEqual(entry.fileSize, 42)
     }
 
     func testLibraryFilteringMatchesNamesPathsAndResolvedMetadata() {

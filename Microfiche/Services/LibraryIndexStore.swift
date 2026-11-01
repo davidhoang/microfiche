@@ -4,12 +4,15 @@
 //
 
 import Combine
+import Darwin
 import Foundation
 
 struct LibraryIndexEntry: Codable, Equatable, Sendable {
     let path: String
     let modificationDate: Date?
     let fileSize: Int?
+    // Optional so indexes written before metadata tracking still decode.
+    var metadataChangeDate: Date? = nil
 
     var imageFile: ImageFile {
         ImageFile(url: URL(fileURLWithPath: path))
@@ -98,10 +101,19 @@ enum LibraryIndexScanner {
             return nil
         }
 
+        // Finder xattrs change ctime, but leave image size and mtime unchanged.
+        var attributes = stat()
+        let metadataChangeDate: Date? = url.withUnsafeFileSystemRepresentation { path in
+            guard let path, stat(path, &attributes) == 0 else { return nil }
+            return Date(timeIntervalSince1970:
+                Double(attributes.st_ctimespec.tv_sec)
+                    + Double(attributes.st_ctimespec.tv_nsec) / 1_000_000_000)
+        }
         return LibraryIndexEntry(
             path: normalizedPath(url),
             modificationDate: values.contentModificationDate,
-            fileSize: values.fileSize
+            fileSize: values.fileSize,
+            metadataChangeDate: metadataChangeDate
         )
     }
 

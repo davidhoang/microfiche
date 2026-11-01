@@ -155,6 +155,9 @@ struct MainContentView: View {
     let imageFiles: [ImageFile]
     let locationRecovery: LibraryLocationRecovery?
     let isFiltering: Bool
+    let isSearching: Bool
+    let filterSummary: String
+    let onClearFilters: () -> Void
     let onRetryUnavailableLocation: () -> Void
     let showsToolbar: Bool
     @Binding var viewMode: ViewMode
@@ -183,15 +186,42 @@ struct MainContentView: View {
                     .fill(Color(NSColor.separatorColor).opacity(0.45))
                     .frame(height: 1)
 
+                if isFiltering || isSearching {
+                    HStack(spacing: 10) {
+                        if isSearching {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text(isSearching ? "Searching library…" : "\(imageFiles.count) \(imageFiles.count == 1 ? "result" : "results") · \(filterSummary)")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .help(filterSummary)
+                            .accessibilityIdentifier("library.filter-summary")
+                        Spacer(minLength: 8)
+                        if isFiltering {
+                            Button("Clear Filters", action: onClearFilters)
+                                .accessibilityIdentifier("library.clear-filters")
+                        }
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.top, 12)
+                }
+
                 VStack {
                     if imageFiles.isEmpty {
                         Spacer(minLength: 24)
-                        EmptyLibraryStateView(
-                            locationRecovery: locationRecovery,
-                            activeContactSheet: activeContactSheet,
-                            isFiltering: isFiltering,
-                            onRetryUnavailableLocation: onRetryUnavailableLocation
-                        )
+                        if isSearching && locationRecovery == nil {
+                            Text("Searching library…")
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("library.searching")
+                        } else {
+                            EmptyLibraryStateView(
+                                locationRecovery: locationRecovery,
+                                activeContactSheet: activeContactSheet,
+                                isFiltering: isFiltering,
+                                onRetryUnavailableLocation: onRetryUnavailableLocation
+                            )
+                        }
                         Spacer(minLength: 24)
                     } else {
                         if viewMode == .grid {

@@ -5,6 +5,7 @@
 //  Created by David Hoang on 6/8/25.
 //
 
+import Darwin
 import XCTest
 
 final class MicroficheUITests: XCTestCase {
@@ -32,12 +33,53 @@ final class MicroficheUITests: XCTestCase {
     }
 
     @MainActor
+    func testPanelControlsStayAtToolbarEdges() throws {
+        let app = configuredApp()
+        app.launch()
+
+        let sidebar = element("library.sidebar", in: app)
+        let inspector = element("inspector.content", in: app)
+        let sidebarToggle = sidebarControl(in: app)
+        let inspectorToggle = button("inspector.toggle", in: app)
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 8))
+        XCTAssertFalse(inspectorToggle.isEnabled)
+        assertPanelControlsAtEdges(in: app)
+
+        for mode in ["grid", "list"] {
+            selectViewMode(mode, in: app)
+            tap(waitForFixtureImage(1, in: app))
+            XCTAssertTrue(inspectorToggle.isEnabled)
+
+            tap(inspectorToggle)
+            XCTAssertTrue(inspector.waitForExistence(timeout: 5))
+            assertPanelControlsAtEdges(in: app)
+
+            tap(sidebarToggle)
+            XCTAssertTrue(sidebar.waitForNonExistence(timeout: 5))
+            assertPanelControlsAtEdges(in: app)
+
+            tap(inspectorToggle)
+            XCTAssertTrue(inspector.waitForNonExistence(timeout: 5))
+            assertPanelControlsAtEdges(in: app)
+
+            tap(sidebarToggle)
+            XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
+            assertPanelControlsAtEdges(in: app)
+        }
+
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Panel controls at toolbar edges"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    @MainActor
     func testPrimaryNavigationControls() throws {
         let app = configuredApp()
         app.launch()
 
         XCTAssertTrue(element("library.sidebar", in: app).waitForExistence(timeout: 8))
-        XCTAssertTrue(element("sidebar.toggle", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(sidebarControl(in: app).waitForExistence(timeout: 5))
 
         let gridButton = button("viewMode.grid", in: app)
         let listButton = button("viewMode.list", in: app)
@@ -77,6 +119,222 @@ final class MicroficheUITests: XCTestCase {
             searchField.typeKey(.delete, modifierFlags: [])
             XCTAssertTrue(second.waitForExistence(timeout: 5))
             tap(first)
+        }
+    }
+
+    @MainActor
+    func testCombinedSearchFiltersAndNoResultsResetInBothViews() throws {
+        let app = configuredApp()
+        app.launch()
+        let first = waitForFixtureImage(1, in: app)
+        let second = waitForFixtureImage(2, in: app)
+        let search = app.searchFields.firstMatch
+        for mode in ["grid", "list"] {
+            selectViewMode(mode, in: app)
+            tap(first)
+            app.typeKey("f", modifierFlags: .command)
+            search.typeText("golden")
+            XCTAssertTrue(second.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(waitUntilChosen(first))
+
+            for (group, option) in [("File Type", "PNG"), ("Tag", "Travel"), ("Finder Label", "Red")] {
+                chooseFilter(option, in: group, app: app)
+            }
+            let summary = element("library.filter-summary", in: app)
+            XCTAssertTrue(waitUntil(timeout: 5) {
+                let text = summary.label.isEmpty ? (summary.value as? String ?? "") : summary.label
+                return text.contains("1 result") && text.contains("Tag Travel")
+                    && text.contains("Finder label Red")
+            }, "Filter summary: \(summary.debugDescription)")
+            XCTAssertTrue(waitUntilChosen(first))
+            if mode == "grid" {
+                let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+                screenshot.name = "Combined library filters"
+                screenshot.lifetime = .keepAlways
+                add(screenshot)
+            }
+
+            chooseFilter("Blue", in: "Finder Label", app: app)
+            XCTAssertTrue(app.staticTexts["No matches"].waitForExistence(timeout: 5))
+            XCTAssertFalse(button("inspector.toggle", in: app).isEnabled)
+            tap(button("library.clear-filters", in: app))
+            XCTAssertTrue(second.waitForExistence(timeout: 5))
+            XCTAssertEqual(search.value as? String, "")
+            XCTAssertTrue(button("library.clear-filters", in: app).waitForNonExistence(timeout: 5))
+        }
+    }
+
+    @MainActor
+    func testExternalMetadataRefreshAndDetailRetentionRepeatedly() throws {
+        // Link a runner-owned folder through the normal file picker so both
+        // sandboxed processes can access it without changing app entitlements.
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("microfiche-search-ui-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("live-search.png")
+        let originalData = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")!
+        try originalData.write(to: url)
+        let app = configuredApp(additionalArguments: ["--ui-testing-watch-files"])
+        defer {
+            app.terminate()
+            try? FileManager.default.removeItem(at: root)
+        }
+        app.launch()
+        _ = waitForFixtureImage(1, in: app)
+        tap(app.buttons["Add Folder"])
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        app.typeText(root.path)
+        app.typeKey(.return, modifierFlags: [])
+        // Confirm the open panel's default action after navigating to the folder.
+        // Avoid traversing its remote file-list accessibility tree in XCTest.
+        app.typeKey(.return, modifierFlags: [])
+        let third = element("image.live-search.png", in: app)
+        let search = app.searchFields.firstMatch
+        app.typeKey("f", modifierFlags: .command)
+        search.typeText("live-search")
+        XCTAssertTrue(third.waitForExistence(timeout: 8))
+        for attempt in 1...2 {
+            app.typeKey("f", modifierFlags: .command)
+            search.typeKey("a", modifierFlags: .command)
+            search.typeText("Live tag \(attempt)")
+            XCTAssertTrue(app.staticTexts["No matches"].waitForExistence(timeout: 5))
+            try setFinderTags(["Live tag \(attempt)"], at: url)
+            XCTAssertTrue(third.waitForExistence(timeout: 8), "Finder tag edits should refresh search")
+            tap(third)
+            XCTAssertTrue(waitUntilChosen(third))
+            third.doubleClick()
+            XCTAssertTrue(element("image.detail", in: app).waitForExistence(timeout: 5))
+
+            // The selected image still matches as the query and metadata change.
+            try setFinderTags(["Live tag \(attempt)", "Updated"], at: url)
+            app.typeKey("f", modifierFlags: .command)
+            search.typeKey("a", modifierFlags: .command)
+            search.typeText("Live tag \(attempt) ")
+            XCTAssertTrue(waitUntil(timeout: 8) {
+                element("image.detail", in: app).exists
+                    && (search.value as? String) == "Live tag \(attempt) "
+            })
+            // Leave the search editor before Escape so it closes detail.
+            search.typeKey(.tab, modifierFlags: [])
+            app.typeKey(.escape, modifierFlags: [])
+            XCTAssertTrue(third.waitForExistence(timeout: 8))
+            app.activate()
+            tap(app.menuButtons["library.filter"])
+            XCTAssertTrue(app.menuItems["Updated"].waitForExistence(timeout: 8))
+            app.typeKey(.escape, modifierFlags: [])
+            XCTAssertTrue(waitUntilChosen(third))
+
+            try setFinderTags([], at: url)
+            XCTAssertTrue(app.staticTexts["No matches"].waitForExistence(timeout: 8))
+            tap(button("library.clear-filters", in: app))
+            XCTAssertTrue(third.waitForExistence(timeout: 5))
+
+            third.doubleClick()
+            XCTAssertTrue(element("image.detail", in: app).waitForExistence(timeout: 5))
+            try FileManager.default.removeItem(at: url)
+            XCTAssertTrue(element("image.detail", in: app).waitForNonExistence(timeout: 8))
+            XCTAssertTrue(third.waitForNonExistence(timeout: 5))
+            try originalData.write(to: url)
+            XCTAssertTrue(third.waitForExistence(timeout: 8))
+            XCTAssertTrue(waitUntilNotChosen(third))
+        }
+    }
+
+    @MainActor
+    func testLocalSourceEditsRefreshSearchWithoutLosingSelection() throws {
+        let app = configuredApp()
+        app.launch()
+        let first = waitForFixtureImage(1, in: app)
+        let second = waitForFixtureImage(2, in: app)
+        let search = app.searchFields.firstMatch
+        tap(first)
+        tap(button("inspector.toggle", in: app))
+        for source in ["Morning source", "Evening source"] {
+            app.typeKey("f", modifierFlags: .command)
+            search.typeKey("a", modifierFlags: .command)
+            search.typeText("fixture-01")
+            let edit = button("inspector.replace-where-from", in: app)
+            tap(edit)
+            let editor = element("inspector.replace-where-from.editor", in: app)
+            tap(editor)
+            editor.typeKey("a", modifierFlags: .command)
+            editor.typeText(source)
+            tap(edit)
+            XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(waitUntilChosen(first))
+
+            app.typeKey("f", modifierFlags: .command)
+            search.typeKey("a", modifierFlags: .command)
+            search.typeText(source)
+            XCTAssertTrue(first.waitForExistence(timeout: 5))
+            XCTAssertTrue(second.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(waitUntilChosen(first))
+            tap(button("library.clear-filters", in: app))
+            XCTAssertTrue(second.waitForExistence(timeout: 5))
+        }
+    }
+
+    @MainActor
+    func testSourceDraftsSaveWhenInspectorClosesRepeatedly() throws {
+        let app = configuredApp()
+        app.launch()
+        let first = waitForFixtureImage(1, in: app)
+        let second = waitForFixtureImage(2, in: app)
+        let search = app.searchFields.firstMatch
+        tap(first)
+        for source in ["Uncommitted morning", "Uncommitted evening"] {
+            tap(button("inspector.toggle", in: app))
+            tap(button("inspector.replace-where-from", in: app))
+            let editor = element("inspector.replace-where-from.editor", in: app)
+            tap(editor)
+            editor.typeKey("a", modifierFlags: .command)
+            editor.typeText(source)
+            let comment = "Comment \(source)"
+            tap(button("inspector.replace-comments", in: app))
+            let commentsEditor = element("inspector.replace-comments.editor", in: app)
+            tap(commentsEditor)
+            commentsEditor.typeKey("a", modifierFlags: .command)
+            commentsEditor.typeText(comment)
+            tap(button("inspector.toggle", in: app))
+            XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(waitUntilChosen(first))
+            // Confirm the asynchronous draft save by reopening the inspector
+            // before searching for the newly committed value.
+            tap(button("inspector.toggle", in: app))
+            let displayedSource = element("inspector.replace-where-from.value", in: app)
+            let displayedComment = element("inspector.replace-comments.value", in: app)
+            XCTAssertTrue(waitUntil(timeout: 5) {
+                displayedSource.label == source || displayedSource.value as? String == source
+            })
+            XCTAssertTrue(waitUntil(timeout: 5) {
+                displayedComment.label == comment || displayedComment.value as? String == comment
+            })
+            tap(button("inspector.toggle", in: app))
+            app.typeKey("f", modifierFlags: .command)
+            search.typeText(source)
+            XCTAssertTrue(first.waitForExistence(timeout: 5))
+            XCTAssertTrue(second.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(waitUntilChosen(first))
+            tap(button("library.clear-filters", in: app))
+            XCTAssertTrue(second.waitForExistence(timeout: 5))
+        }
+    }
+
+    @MainActor
+    func testToolbarSearchCanCancelRepeatedly() throws {
+        let app = configuredApp()
+        app.launch()
+        let second = waitForFixtureImage(2, in: app)
+        let search = app.searchFields.firstMatch
+
+        for _ in 0..<2 {
+            app.typeKey("f", modifierFlags: .command)
+            search.typeText("fixture-01")
+            XCTAssertTrue(second.waitForNonExistence(timeout: 5))
+            search.typeKey(.escape, modifierFlags: [])
+            XCTAssertTrue(waitUntil(timeout: 5) { (search.value as? String) == "" })
+            XCTAssertTrue(second.waitForExistence(timeout: 5))
         }
     }
 
@@ -208,6 +466,7 @@ final class MicroficheUITests: XCTestCase {
                 XCTAssertTrue(
                     element("image.detail", in: app).waitForExistence(timeout: 5)
                 )
+                XCTAssertTrue(app.searchFields.firstMatch.exists)
                 app.typeKey(.escape, modifierFlags: [])
                 XCTAssertTrue(first.waitForExistence(timeout: 5))
             }
@@ -253,7 +512,7 @@ final class MicroficheUITests: XCTestCase {
         app.launch()
 
         let sidebar = element("library.sidebar", in: app)
-        let toggle = button("sidebar.toggle", in: app)
+        let toggle = sidebarControl(in: app)
         XCTAssertTrue(sidebar.waitForExistence(timeout: 8))
 
         for _ in 0..<2 {
@@ -385,6 +644,63 @@ final class MicroficheUITests: XCTestCase {
                 configuredApp().launch()
             }
         }
+    }
+
+    @MainActor
+    private func sidebarControl(in app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(
+            format: "label == %@ OR label == %@", "Show Sidebar", "Hide Sidebar"
+        )).firstMatch
+    }
+
+    @MainActor
+    private func assertPanelControlsAtEdges(in app: XCUIApplication) {
+        let sidebarToggle = sidebarControl(in: app)
+        let inspectorToggle = button("inspector.toggle", in: app)
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.searchFields.count, 1)
+        let controlsAtEdges = waitUntil(timeout: 5) {
+            let window = app.windows.firstMatch.frame
+            return sidebarToggle.frame.maxX < window.minX + window.width * 0.25
+                // AppKit includes a one-point bezel outside the search view.
+                && inspectorToggle.frame.minX >= search.frame.maxX - 1
+        }
+        if !controlsAtEdges {
+            add(XCTAttachment(screenshot: app.windows.firstMatch.screenshot()))
+        }
+        XCTAssertTrue(controlsAtEdges,
+            "Sidebar must be at the leading edge and inspector after search. "
+            + "Window: \(app.windows.firstMatch.frame), sidebar: \(sidebarToggle.frame), "
+            + "search: \(search.frame), inspector: \(inspectorToggle.frame)"
+        )
+        XCTAssertEqual(
+            app.buttons.matching(NSPredicate(
+                format: "identifier == %@ OR label ==[c] %@ OR label ==[c] %@ OR label ==[c] %@",
+                "sidebar.toggle", "Toggle Sidebar", "Show Sidebar", "Hide Sidebar"
+            )).count,
+            1,
+            "The toolbar must not contain both native and custom sidebar toggles"
+        )
+    }
+
+    @MainActor
+    private func chooseFilter(_ option: String, in group: String, app: XCUIApplication) {
+        app.activate()
+        tap(app.menuButtons["library.filter"])
+        XCTAssertTrue(app.menuItems[group].waitForExistence(timeout: 5))
+        app.menuItems[group].hover()
+        XCTAssertTrue(app.menuItems[option].waitForExistence(timeout: 5))
+        app.menuItems[option].click()
+        XCTAssertTrue(app.menuItems["Clear Filters"].waitForNonExistence(timeout: 5))
+    }
+
+    private func setFinderTags(_ tags: [String], at url: URL) throws {
+        let data = try PropertyListSerialization.data(fromPropertyList: tags, format: .binary, options: 0)
+        let result = data.withUnsafeBytes {
+            setxattr(url.path, "com.apple.metadata:_kMDItemUserTags", $0.baseAddress, $0.count, 0, 0)
+        }
+        XCTAssertEqual(result, 0, "Unable to update fixture Finder tags, errno \(errno)")
     }
 
     @MainActor

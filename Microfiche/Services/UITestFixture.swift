@@ -17,6 +17,7 @@ struct UITestFixture {
 
     static func make() -> UITestFixture {
         let fileManager = FileManager.default
+        let arguments = ProcessInfo.processInfo.arguments
         let root = fileManager.temporaryDirectory
             .appendingPathComponent("microfiche-ui-fixture-\(UUID().uuidString)", isDirectory: true)
         let photos = root.appendingPathComponent("Photos", isDirectory: true)
@@ -67,7 +68,6 @@ struct UITestFixture {
             for: imageURLs[1]
         )
 
-        let arguments = ProcessInfo.processInfo.arguments
         let defaultsName: String
         if let markerIndex = arguments.firstIndex(of: "--ui-testing-defaults-suite"),
            arguments.indices.contains(markerIndex + 1) {
@@ -122,7 +122,7 @@ struct UITestFixture {
             libraryIndex: LibraryIndexStore(
                 persistenceURL: root.appendingPathComponent("library-index.json"),
                 fileManager: fileManager,
-                watchesFileSystem: false
+                watchesFileSystem: arguments.contains("--ui-testing-watch-files")
             ),
             metadataStore: metadataStore
         )

@@ -56,13 +56,19 @@ final class ImageMetadataStore {
         }
 
         // One-time migration from earlier Microfiche xattr attempts.
-        if let migrated = migrateLegacyExtendedAttributes(from: url) {
+        if let migrated = Self.migrateLegacyExtendedAttributes(from: url) {
             records[key] = migrated
             persist()
             return migrated
         }
 
         return .empty
+    }
+
+    /// Background search can resolve paths and legacy xattrs from this value
+    /// snapshot without doing filesystem work on the main actor.
+    func snapshot() -> [String: ImageMetadata] {
+        records
     }
 
     func save(_ metadata: ImageMetadata, for url: URL) {
@@ -160,7 +166,7 @@ final class ImageMetadataStore {
 
     // MARK: - Legacy Migration
 
-    private func migrateLegacyExtendedAttributes(from url: URL) -> ImageMetadata? {
+    nonisolated static func migrateLegacyExtendedAttributes(from url: URL) -> ImageMetadata? {
         var metadata = ImageMetadata.empty
         var found = false
 

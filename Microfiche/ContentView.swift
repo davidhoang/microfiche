@@ -161,10 +161,14 @@ private struct LibrarySearchMetadataLoadSignature: Hashable {
     let metadataRevision: UInt64
 }
 
-private struct LibrarySearchMetadataInput: Sendable {
-    let fileID: UUID
-    let url: URL
-    let local: ImageMetadata
+private struct LibrarySearchRequest: Hashable {
+    let metadata: LibrarySearchMetadataLoadSignature
+    let query: LibrarySearchQuery
+}
+
+private struct LibrarySearchTaskID: Hashable {
+    let request: LibrarySearchRequest
+    let loadedMetadata: LibrarySearchMetadataLoadSignature?
 }
 
 // MARK: - Content View
@@ -200,13 +204,17 @@ struct ContentView: View {
     @AppStorage private var isLibrarySidebarCollapsed: Bool
     @State private var externalDriveNotice: String?
     @State private var searchText = ""
-    @State private var isSearchPresented = false
+    @State private var isLibrarySearchFocused = false
     @State private var selectedFileType = ""
     @State private var selectedTag = ""
     @State private var selectedLabel = FinderLabel.none
     @State private var sortOption = LibrarySortOption.name
     @State private var sortDirection = LibrarySortDirection.ascending
     @State private var searchMetadataByFileID: [UUID: LibraryItemMetadata] = [:]
+    @State private var availableTags: [String] = []
+    @State private var loadedSearchMetadata: LibrarySearchMetadataLoadSignature?
+    @State private var completedSearchRequest: LibrarySearchRequest?
+    @State private var displayedImageFiles: [ImageFile] = []
     @State private var metadataRevision: UInt64 = 0
     @AppStorage private var lastSelectedLibraryFolderID: String
     private let metadataStore: ImageMetadataStore
@@ -294,23 +302,9 @@ struct ContentView: View {
 
     private var searchObservedLibrary: some View {
         libraryContainer
-                .onChange(of: searchText) {
-                    pruneSelectionToVisibleFiles()
-                }
-                .onChange(of: selectedFileType) {
-                    pruneSelectionToVisibleFiles()
-                }
-                .onChange(of: selectedTag) {
-                    pruneSelectionToVisibleFiles()
-                }
-                .onChange(of: selectedLabel) {
-                    pruneSelectionToVisibleFiles()
-                }
-                .onChange(of: sortOption) {
-                    requestScrollToFocusedImage()
-                }
-                .onChange(of: sortDirection) {
-                    requestScrollToFocusedImage()
+                .onChange(of: imageFiles) {
+                    let currentIDs = Set(imageFiles.map(\.id))
+                    displayedImageFiles.removeAll { !currentIDs.contains($0.id) }
                 }
                 .onReceive(
                     NotificationCenter.default.publisher(
@@ -328,14 +322,20 @@ struct ContentView: View {
                         for: .microficheFocusLibrarySearch
                     )
                 ) { _ in
-                    isSearchPresented = false
+                    isLibrarySearchFocused = false
                     Task { @MainActor in
                         await Task.yield()
-                        isSearchPresented = true
+                        isLibrarySearchFocused = true
                     }
                 }
                 .task(id: searchMetadataLoadSignature) {
                     await reloadSearchMetadata()
+                }
+                .task(id: LibrarySearchTaskID(
+                    request: searchRequest,
+                    loadedMetadata: loadedSearchMetadata
+                )) {
+                    await reloadSearchResults()
                 }
     }
 
@@ -591,15 +591,7 @@ struct ContentView: View {
                 libraryDetailNavigation
             }
             .navigationTitle("")
-            .toolbar {
-                libraryToolbar
-            }
-            .searchable(
-                text: $searchText,
-                isPresented: $isSearchPresented,
-                placement: .toolbar,
-                prompt: "Search library"
-            )
+            .toolbar { libraryToolbar }
             .microficheToolbarChrome()
         )
     }
@@ -610,6 +602,9 @@ struct ContentView: View {
                 imageFiles: displayedImageFiles,
                 locationRecovery: libraryLocationRecovery,
                 isFiltering: hasActiveFilter,
+                isSearching: completedSearchRequest != searchRequest,
+                filterSummary: filterAccessibilityValue,
+                onClearFilters: clearFilters,
                 onRetryUnavailableLocation: {
                     libraryStorage.refreshLocations(saveAfterRefresh: true)
                 },
@@ -634,7 +629,8 @@ struct ContentView: View {
                 if !selectedImageFiles.isEmpty {
                     ImageMetadataInspectorView(
                         files: selectedImageFiles,
-                        metadataStore: metadataStore
+                        metadataStore: metadataStore,
+                        isPresented: libraryInspectorBinding.wrappedValue
                     )
                         .id(selectedImageFiles.map(\.id))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -650,20 +646,6 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var libraryToolbar: some ToolbarContent {
         if !isImageDetailPresented {
-            ToolbarItem {
-                Button {
-                    withAnimation(MicroficheMotion.transition(reducedMotion: reduceMotion)) {
-                        isLibrarySidebarCollapsed.toggle()
-                    }
-                } label: {
-                    Image(systemName: "sidebar.left")
-                }
-                .help("Toggle Sidebar")
-                .accessibilityLabel("Toggle sidebar")
-                .accessibilityIdentifier("sidebar.toggle")
-            }
-            .hideSharedBackgroundIfAvailable()
-
             ToolbarItem(placement: .principal) {
                 if viewMode == .grid {
                     HStack(spacing: 6) {
@@ -696,7 +678,39 @@ struct ContentView: View {
             }
             .hideSharedBackgroundIfAvailable()
 
-            ToolbarItem {
+            ToolbarItem(placement: .automatic) {
+                filterMenu
+            }
+            .hideSharedBackgroundIfAvailable()
+
+            ToolbarItem(placement: .automatic) {
+                sortMenu
+            }
+            .hideSharedBackgroundIfAvailable()
+
+            if let activeContactSheet {
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        presentContactSheetExport(sheetID: activeContactSheet.id)
+                    } label: {
+                        Image(systemName: "doc.badge.arrow.up")
+                    }
+                    .help("Export Contact Sheet")
+                    .accessibilityLabel("Export \(activeContactSheet.name)")
+                    .accessibilityIdentifier("export-contact-sheet")
+                }
+                .hideSharedBackgroundIfAvailable()
+            }
+        }
+
+        ToolbarItem(placement: .automatic) {
+            LibrarySearchField(text: $searchText, isFocused: $isLibrarySearchFocused)
+                .frame(width: 240)
+        }
+        .hideSharedBackgroundIfAvailable()
+
+        if !isImageDetailPresented {
+            ToolbarItem(placement: .automatic) {
                 Button {
                     withAnimation(MicroficheMotion.panel(reducedMotion: reduceMotion)) {
                         isMetadataInspectorPresented.toggle()
@@ -715,30 +729,6 @@ struct ContentView: View {
                 .accessibilityIdentifier("inspector.toggle")
             }
             .hideSharedBackgroundIfAvailable()
-
-            ToolbarItem {
-                filterMenu
-            }
-            .hideSharedBackgroundIfAvailable()
-
-            ToolbarItem {
-                sortMenu
-            }
-            .hideSharedBackgroundIfAvailable()
-
-            if let activeContactSheet {
-                ToolbarItem {
-                    Button {
-                        presentContactSheetExport(sheetID: activeContactSheet.id)
-                    } label: {
-                        Image(systemName: "doc.badge.arrow.up")
-                    }
-                    .help("Export Contact Sheet")
-                    .accessibilityLabel("Export \(activeContactSheet.name)")
-                    .accessibilityIdentifier("export-contact-sheet")
-                }
-                .hideSharedBackgroundIfAvailable()
-            }
         }
     }
 
@@ -770,45 +760,41 @@ struct ContentView: View {
             || selectedLabel != .none
     }
 
-    private var displayedImageFiles: [ImageFile] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered = imageFiles.filter { file in
-            LibraryFiltering.matches(
-                file: file,
-                metadata: searchMetadata(
-                    for: file,
-                    local: metadataStore.metadata(for: file.url)
-                ),
-                query: query,
+    private var searchRequest: LibrarySearchRequest {
+        LibrarySearchRequest(
+            metadata: searchMetadataLoadSignature,
+            query: LibrarySearchQuery(
+                text: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
                 fileType: selectedFileType,
                 tag: selectedTag,
-                label: selectedLabel
+                label: selectedLabel,
+                sortOption: sortOption,
+                sortDirection: sortDirection
             )
-        }
-        return LibrarySorting.sorted(
-            filtered,
-            by: sortOption,
-            direction: sortDirection
-        ) { file in
-            searchMetadata(
-                for: file,
-                local: metadataStore.metadata(for: file.url)
-            )
-        }
+        )
+    }
+
+    private func reloadSearchResults() async {
+        let request = searchRequest
+        // Keep the last complete result while metadata is loading. Pruning
+        // against partial metadata could discard a still-valid selection/route.
+        guard loadedSearchMetadata == request.metadata
+                || !request.query.requiresMetadata else { return }
+        guard let results = await LibrarySearch.evaluate(
+            files: imageFiles,
+            metadata: searchMetadataByFileID,
+            query: request.query
+        ), !Task.isCancelled, request == searchRequest else { return }
+        displayedImageFiles = results
+        completedSearchRequest = request
+        pruneSelectionToVisibleFiles()
+        requestScrollToFocusedImage()
     }
 
     private var availableFileTypes: [String] {
         Set(imageFiles.map { $0.url.pathExtension.lowercased() })
             .filter { !$0.isEmpty }
             .sorted()
-    }
-
-    private var availableTags: [String] {
-        var tags = Set(metadataStore.allTags(for: imageFiles.map(\.url)))
-        for metadata in searchMetadataByFileID.values {
-            tags.formUnion(metadata.resolved.tags)
-        }
-        return tags.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     private var searchMetadataLoadSignature: LibrarySearchMetadataLoadSignature {
@@ -819,50 +805,40 @@ struct ContentView: View {
         )
     }
 
-    private func searchMetadata(
-        for file: ImageFile,
-        local: ImageMetadata
-    ) -> LibraryItemMetadata {
-        searchMetadataByFileID[file.id]
-            ?? LibraryItemMetadata(
-                resolved: BatchMetadataAggregation.resolved(
-                    native: .empty,
-                    local: local
-                )
-            )
-    }
-
     private func reloadSearchMetadata() async {
-        let inputs = imageFiles.map {
-            LibrarySearchMetadataInput(
-                fileID: $0.id,
-                url: $0.url,
-                local: metadataStore.metadata(for: $0.url)
-            )
-        }
+        let signature = searchMetadataLoadSignature
+        let files = imageFiles
+        let localRecords = metadataStore.snapshot()
 
         let loadTask = Task.detached(priority: .utility) {
             var loaded: [UUID: LibraryItemMetadata] = [:]
-            loaded.reserveCapacity(inputs.count)
-            for input in inputs {
+            loaded.reserveCapacity(files.count)
+            for file in files {
                 guard !Task.isCancelled else { break }
+                var url = file.url
+                url.removeAllCachedResourceValues()
+                let local = localRecords[ImageIdentity.normalizedPath(for: url)]
+                    ?? ImageMetadataStore.migrateLegacyExtendedAttributes(from: url)
+                    ?? .empty
                 let resolved = BatchMetadataAggregation.resolved(
-                    native: NativeFileMetadataService.load(from: input.url),
-                    local: input.local
+                    native: NativeFileMetadataService.load(from: url),
+                    local: local
                 )
-                let technical = try? PhotoMetadataReader.read(from: input.url)
+                let technical = try? PhotoMetadataReader.read(from: url)
                 let modificationDate = (
-                    try? input.url.resourceValues(
+                    try? url.resourceValues(
                         forKeys: [.contentModificationDateKey]
                     )
                 )?.contentModificationDate
-                loaded[input.fileID] = LibraryItemMetadata(
+                loaded[file.id] = LibraryItemMetadata(
                     resolved: resolved,
                     technical: technical,
                     modificationDate: modificationDate
                 )
             }
-            return loaded
+            let tags = Set(loaded.values.flatMap { $0.resolved.tags })
+                .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            return (metadata: loaded, tags: tags)
         }
 
         let loaded = await withTaskCancellationHandler {
@@ -870,10 +846,10 @@ struct ContentView: View {
         } onCancel: {
             loadTask.cancel()
         }
-        guard !Task.isCancelled else { return }
-        searchMetadataByFileID = loaded
-        pruneSelectionToVisibleFiles()
-        requestScrollToFocusedImage()
+        guard !Task.isCancelled, signature == searchMetadataLoadSignature else { return }
+        searchMetadataByFileID = loaded.metadata
+        availableTags = loaded.tags
+        loadedSearchMetadata = signature
     }
 
     private var filterAccessibilityValue: String {
@@ -918,12 +894,7 @@ struct ContentView: View {
             }
 
             Divider()
-            Button("Clear Filters") {
-                selectedFileType = ""
-                selectedTag = ""
-                selectedLabel = .none
-                searchText = ""
-            }
+            Button("Clear Filters", action: clearFilters)
             .disabled(!hasActiveFilter)
         } label: {
             Image(systemName: hasActiveFilter ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
@@ -932,6 +903,13 @@ struct ContentView: View {
         .accessibilityLabel("Filter library")
         .accessibilityValue(filterAccessibilityValue)
         .accessibilityIdentifier("library.filter")
+    }
+
+    private func clearFilters() {
+        selectedFileType = ""
+        selectedTag = ""
+        selectedLabel = .none
+        searchText = ""
     }
 
     private var sortMenu: some View {
