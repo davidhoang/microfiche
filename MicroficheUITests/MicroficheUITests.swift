@@ -411,44 +411,65 @@ final class MicroficheUITests: XCTestCase {
             element("sidebar.contact-sheet.Second Review", in: app)
                 .waitForExistence(timeout: 5)
         )
-        XCTAssertEqual(first.value as? String, "Not selected")
+        for mode in ["grid", "list"] {
+            selectViewMode(mode, in: app)
+            let fourth = waitForFixtureImage(4, in: app)
 
-        tap(first)
-        XCTAssertTrue(waitUntilChosen(first))
-        tap(second)
-        XCTAssertTrue(waitUntilChosen(second))
-        tap(second)
-        XCTAssertTrue(waitUntilChosen(second))
+            for _ in 0..<2 {
+                for image in [first, second, third, fourth, fifth] {
+                    XCTAssertTrue(waitUntilNotChosen(image))
+                }
+                XCTAssertFalse(button("inspector.toggle", in: app).isEnabled)
 
-        XCUIElement.perform(withKeyModifiers: .command) {
-            tap(third)
+                tap(first)
+                XCTAssertTrue(waitUntilChosen(first))
+                tap(second)
+                XCTAssertTrue(waitUntilChosen(second))
+                XCTAssertTrue(waitUntilNotChosen(first))
+                tap(second)
+                XCTAssertTrue(waitUntilChosen(second))
+
+                XCUIElement.perform(withKeyModifiers: .command) { tap(third) }
+                XCTAssertTrue(waitUntilChosen(second))
+                XCTAssertTrue(waitUntilChosen(third))
+                XCUIElement.perform(withKeyModifiers: .command) { tap(third) }
+                XCTAssertTrue(waitUntilNotChosen(third))
+                XCTAssertTrue(waitUntilChosen(second))
+
+                XCUIElement.perform(withKeyModifiers: .shift) { tap(fifth) }
+                for image in [second, third, fourth, fifth] {
+                    XCTAssertTrue(waitUntilChosen(image))
+                }
+                XCTAssertTrue(waitUntilNotChosen(first))
+
+                for _ in 0..<5 {
+                    tap(first)
+                }
+                XCTAssertTrue(waitUntilChosen(first))
+                for image in [second, third, fourth, fifth] {
+                    XCTAssertTrue(waitUntilNotChosen(image))
+                }
+                XCTAssertTrue(element("image.detail", in: app).waitForNonExistence(timeout: 5))
+
+                app.typeKey(.rightArrow, modifierFlags: [])
+                XCTAssertTrue(waitUntilChosen(second))
+                XCTAssertTrue(waitUntilNotChosen(first))
+                app.typeKey(.rightArrow, modifierFlags: .shift)
+                XCTAssertTrue(waitUntilChosen(second))
+                XCTAssertTrue(waitUntilChosen(third))
+                app.typeKey(.leftArrow, modifierFlags: [])
+                XCTAssertTrue(waitUntilChosen(second))
+                XCTAssertTrue(waitUntilNotChosen(third))
+
+                XCUIElement.perform(withKeyModifiers: .command) { tap(second) }
+                XCTAssertTrue(waitUntilNotChosen(second))
+                XCTAssertFalse(button("inspector.toggle", in: app).isEnabled)
+                app.typeKey(.rightArrow, modifierFlags: [])
+                XCTAssertTrue(waitUntilChosen(first))
+                app.typeKey(.escape, modifierFlags: [])
+                XCTAssertTrue(waitUntilNotChosen(first))
+            }
         }
-        XCTAssertTrue(waitUntilChosen(second))
-        XCTAssertTrue(waitUntilChosen(third))
-        XCUIElement.perform(withKeyModifiers: .shift) {
-            tap(fifth)
-        }
-        XCTAssertTrue(waitUntilChosen(third))
-        XCTAssertTrue(waitUntilChosen(waitForFixtureImage(4, in: app)))
-        XCTAssertTrue(waitUntilChosen(fifth))
-
-        for _ in 0..<5 {
-            tap(first)
-        }
-        XCTAssertTrue(waitUntilChosen(first))
-
-        app.typeKey(.rightArrow, modifierFlags: [])
-        XCTAssertTrue(waitUntilChosen(second))
-        app.typeKey(.leftArrow, modifierFlags: [])
-        XCTAssertTrue(waitUntilChosen(first))
-        app.typeKey(.escape, modifierFlags: [])
-        XCTAssertTrue(waitUntilNotChosen(first))
-
-        selectViewMode("list", in: app)
-        tap(third)
-        XCTAssertTrue(waitUntilChosen(third))
-        selectViewMode("grid", in: app)
-        XCTAssertTrue(waitUntilChosen(third))
     }
 
     @MainActor
@@ -511,37 +532,79 @@ final class MicroficheUITests: XCTestCase {
     }
 
     @MainActor
-    func testDoubleClickDragAndContextMenuDoNotDisableLaterClicks() throws {
+    func testSelectedAndUnselectedDoubleClicksOpenTheCorrectImageTwice() throws {
         let app = configuredApp()
         app.launch()
 
         let first = waitForFixtureImage(1, in: app)
         let second = waitForFixtureImage(2, in: app)
-        let third = waitForFixtureImage(3, in: app)
-
-        for image in [first, second] {
-            for _ in 0..<2 {
-                image.doubleClick()
-                XCTAssertTrue(
-                    element("image.detail", in: app).waitForExistence(timeout: 5)
-                )
-                XCTAssertTrue(app.searchFields.firstMatch.exists)
-                app.typeKey(.escape, modifierFlags: [])
-                XCTAssertTrue(first.waitForExistence(timeout: 5))
+        let detail = element("image.detail", in: app)
+        for mode in ["grid", "list"] {
+            selectViewMode(mode, in: app)
+            for initiallySelected in [false, true] {
+                for _ in 0..<2 {
+                    tap(first)
+                    XCTAssertTrue(waitUntilChosen(first))
+                    if initiallySelected {
+                        tap(second)
+                        XCTAssertTrue(waitUntilChosen(second))
+                    } else {
+                        XCTAssertTrue(waitUntilNotChosen(second))
+                    }
+                    second.doubleClick()
+                    XCTAssertTrue(detail.waitForExistence(timeout: 5))
+                    XCTAssertEqual(detail.label, "fixture-02.png")
+                    XCTAssertTrue(app.searchFields.firstMatch.exists)
+                    app.typeKey(.escape, modifierFlags: [])
+                    XCTAssertTrue(detail.waitForNonExistence(timeout: 5))
+                    XCTAssertTrue(waitUntilChosen(second))
+                    XCTAssertTrue(waitUntilNotChosen(first))
+                }
             }
         }
+    }
 
-        let start = first.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let end = first.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
-        start.press(forDuration: 0.2, thenDragTo: end)
-        tap(second)
-        XCTAssertTrue(waitUntilChosen(second))
+    @MainActor
+    func testDragAndContextMenuDoNotDisableLaterClicksTwiceInBothViews() throws {
+        let app = configuredApp()
+        app.launch()
+        let destination = element("sidebar.contact-sheet.Second Review", in: app)
+        XCTAssertTrue(destination.waitForExistence(timeout: 5))
+        var expectedCount = 4
 
-        second.rightClick()
-        XCTAssertTrue(app.menuItems["Move to Archive"].waitForExistence(timeout: 5))
-        app.typeKey(.escape, modifierFlags: [])
-        tap(third)
-        XCTAssertTrue(waitUntilChosen(third))
+        for (modeIndex, mode) in ["grid", "list"].enumerated() {
+            selectViewMode(mode, in: app)
+            for attempt in 0..<2 {
+                // Use a new source each time so the sheet's count proves a
+                // real drag occurred, not just a mouse-down inside the cell.
+                let source = waitForFixtureImage(modeIndex * 2 + attempt + 1, in: app)
+                tap(source)
+                XCTAssertTrue(waitUntilChosen(source))
+                let start = source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                let end = destination.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                start.press(forDuration: 0.2, thenDragTo: end)
+                expectedCount += 1
+                XCTAssertTrue(waitUntil(timeout: 8) {
+                    let value = destination.value as? String
+                    return value == "\(expectedCount) images"
+                        || value == "Selected, \(expectedCount) images"
+                }, "A completed drop must add exactly one fixture image")
+
+                let next = waitForFixtureImage(9, in: app)
+                tap(next)
+                XCTAssertTrue(waitUntilChosen(next))
+                XCTAssertTrue(waitUntilNotChosen(source))
+                next.rightClick()
+                let archive = app.menuItems["Move to Archive"]
+                XCTAssertTrue(archive.waitForExistence(timeout: 5))
+                app.typeKey(.escape, modifierFlags: [])
+                XCTAssertTrue(archive.waitForNonExistence(timeout: 5))
+                let later = waitForFixtureImage(10, in: app)
+                tap(later)
+                XCTAssertTrue(waitUntilChosen(later))
+                XCTAssertTrue(waitUntilNotChosen(next))
+            }
+        }
     }
 
     @MainActor
@@ -798,20 +861,23 @@ final class MicroficheUITests: XCTestCase {
     @MainActor
     private func waitForFixtureImage(_ index: Int, in app: XCUIApplication) -> XCUIElement {
         let image = fixtureImage(index, in: app)
-        if image.waitForExistence(timeout: 3) {
+        if waitUntil(timeout: 3, { image.exists && image.isHittable }) {
             return image
         }
 
-        for identifier in ["image.grid", "image.list", "library.sidebar"] {
-            let scroller = element(identifier, in: app)
-            if scroller.exists {
-                scroller.scroll(byDeltaX: 0, deltaY: identifier == "library.sidebar" ? 240 : -480)
+        for _ in 0..<6 {
+            for identifier in ["image.grid", "image.list"] {
+                let scroller = element(identifier, in: app)
+                if scroller.exists {
+                    scroller.scroll(byDeltaX: 0, deltaY: index > 12 ? -400 : 400)
+                }
             }
+            if image.exists && image.isHittable { break }
         }
 
         XCTAssertTrue(
-            image.waitForExistence(timeout: 8),
-            "Expected fixture image \(index) in the isolated library"
+            waitUntil(timeout: 8, { image.exists && image.isHittable }),
+            "Expected a visible, hittable fixture image \(index) in the isolated library"
         )
         return image
     }
@@ -832,11 +898,11 @@ final class MicroficheUITests: XCTestCase {
     @MainActor
     private func tap(_ element: XCUIElement) {
         XCTAssertTrue(element.waitForExistence(timeout: 5), "Expected \(element) to exist before clicking")
-        if element.isHittable {
-            element.click()
-        } else {
-            element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        guard waitUntil(timeout: 5, { element.isEnabled && element.isHittable }) else {
+            XCTFail("Expected an enabled, hittable click target: \(element.debugDescription)")
+            return
         }
+        element.click()
     }
 
     @MainActor
@@ -844,9 +910,6 @@ final class MicroficheUITests: XCTestCase {
         let control = button("viewMode.\(mode)", in: app)
         XCTAssertTrue(control.waitForExistence(timeout: 5), "Missing viewMode.\(mode)")
         tap(control)
-        if !waitUntilChosen(control, timeout: 1) {
-            app.typeKey(mode == "list" ? "2" : "1", modifierFlags: .command)
-        }
         XCTAssertTrue(
             waitUntilChosen(control),
             "Expected viewMode.\(mode) to become selected"
@@ -859,7 +922,7 @@ final class MicroficheUITests: XCTestCase {
         timeout: TimeInterval = 5
     ) -> Bool {
         waitUntil(timeout: timeout) {
-            element.isSelected || (element.value as? String) == "Selected"
+            element.exists && (element.isSelected || (element.value as? String) == "Selected")
         }
     }
 
@@ -869,7 +932,7 @@ final class MicroficheUITests: XCTestCase {
         timeout: TimeInterval = 5
     ) -> Bool {
         waitUntil(timeout: timeout) {
-            !element.isSelected && (element.value as? String) != "Selected"
+            element.exists && !element.isSelected && (element.value as? String) == "Not selected"
         }
     }
 

@@ -82,6 +82,32 @@ Use the unsigned override for standalone builds only.
 
 Use a temporary `-derivedDataPath` when isolation from local Xcode state is useful.
 
+## Deterministic library interaction coverage (PCD-26)
+
+All UI entry points launch with `--ui-testing-fixtures` and a unique
+`--ui-testing-defaults-suite`. The fixture seeds 24 local PNGs and two contact
+sheets in a temporary directory. Relaunching the same configured application
+keeps its defaults suite, but a new test gets a new suite and new files.
+No developer library, personal folder, or iCloud account is required.
+
+| Affected states and transitions | Executable coverage |
+| --- | --- |
+| No selection -> first -> different -> reselect; rapid repeat; Command add/remove/last-item removal; Shift range; arrows/Shift-arrow/Escape | `testFixtureLibraryAndRepeatedSelectionTransitions`, twice per grid/list view |
+| Selected and unselected double-click -> correct detail -> Escape -> later selection | `testSelectedAndUnselectedDoubleClicksOpenTheCorrectImageTwice`, each initial state twice per view |
+| Drag -> completed contact-sheet drop -> later click; context menu -> cancel -> later click | `testDragAndContextMenuDoNotDisableLaterClicksTwiceInBothViews`, twice per view; sheet count proves drag initiation |
+| Selected image removed -> next image and current inspector filename | `testRemovingSelectedImageClearsInspectorWithoutStaleContent`, two removals |
+| Sidebar and inspector expanded/collapsed -> relaunch -> persisted state in both directions | `testSidebarCollapseAndExpansionPersistAcrossRelaunchTwice` and `testInspectorCollapseAndExpansionPersistAcrossRelaunchTwice` |
+| Lazy/scrolled cell; repeated view changes; empty/single/multiple selection | `testViewModeSwitchingPreservesSelectionAndKeyboardFocusRepeatedly` |
+| Hosted display smaller than preferred window, including titlebar/menu bar | `testUITestWindowFitsVisibleScreenIncludingToolbarChrome` |
+
+Pointer tests wait for enabled, hittable targets. They must not silently replace
+a failed click with a keyboard shortcut or click the coordinates of an offscreen
+control. Window sizing fits the fixture window to the display's visible frame.
+
+Run the signed `xcodebuild ... test` command above to verify this matrix. The
+advisory UI job's outcome must be inspected separately from the workflow's
+overall status. A merged PR or a green build is not sufficient to close PCD-26.
+
 ## Automated test expectations
 
 - Put pure state-transition and navigation coverage in `MicroficheTests`.

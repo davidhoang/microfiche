@@ -660,6 +660,31 @@ final class MicroficheTests: XCTestCase {
         XCTAssertNil(lastItem.focusedID)
     }
 
+    func testUITestWindowFitsVisibleScreenIncludingToolbarChrome() {
+        // The preferred frame includes a titlebar above the 1440 x 900 content.
+        let preferred = CGRect(x: 0, y: 0, width: 1440, height: 928)
+        let screens = [
+            CGRect(x: 0, y: 25, width: 1280, height: 720),
+            CGRect(x: 0, y: 25, width: 1920, height: 1055),
+            CGRect(x: -1280, y: 50, width: 1280, height: 720),
+            CGRect(x: 0, y: 25, width: 1920, height: 720),
+            CGRect(x: 0, y: 25, width: 1280, height: 1055)
+        ]
+        for screen in screens {
+            for _ in 0..<2 {
+                let frame = UITestHost.fittingWindowFrame(
+                    preferredFrame: preferred,
+                    visibleFrame: screen
+                )
+                XCTAssertTrue(screen.contains(frame))
+                XCTAssertEqual(frame.width, min(preferred.width, screen.width))
+                XCTAssertEqual(frame.height, min(preferred.height, screen.height))
+                XCTAssertEqual(frame.midX, screen.midX)
+                XCTAssertEqual(frame.midY, screen.midY)
+            }
+        }
+    }
+
     #if DEBUG
     @MainActor
     func testUITestFixtureSeedsTwentyImagesTwoContactSheetsAndIsolatedDefaults() throws {

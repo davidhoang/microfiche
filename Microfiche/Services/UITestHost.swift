@@ -30,14 +30,38 @@ enum UITestHost {
         ProcessInfo.processInfo.arguments.contains("--ui-testing-reduce-transparency")
     }
 
+    static func fittingWindowFrame(preferredFrame: NSRect, visibleFrame: NSRect) -> NSRect {
+        let size = NSSize(
+            width: min(preferredFrame.width, visibleFrame.width),
+            height: min(preferredFrame.height, visibleFrame.height)
+        )
+        return NSRect(
+            x: visibleFrame.midX - size.width / 2,
+            y: visibleFrame.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
     @MainActor
     static func applyWindowLayoutIfNeeded() {
         guard isLaunchedForUITesting else { return }
 
         let size = NSSize(width: 1440, height: 900)
         for window in NSApplication.shared.windows where window.isVisible {
-            window.setContentSize(size)
-            window.center()
+            guard let screen = window.screen ?? NSScreen.main else { continue }
+            let preferredFrame = window.frameRect(
+                forContentRect: NSRect(origin: .zero, size: size)
+            )
+            // Include titlebar chrome and the menu bar/Dock safe area. A fixed
+            // content size can put toolbar buttons outside a hosted display.
+            window.setFrame(
+                fittingWindowFrame(
+                    preferredFrame: preferredFrame,
+                    visibleFrame: screen.visibleFrame
+                ),
+                display: true
+            )
         }
     }
 }
