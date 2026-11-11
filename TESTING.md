@@ -98,11 +98,14 @@ No developer library, personal folder, or iCloud account is required.
 | Selected image removed -> next image and current inspector filename | `testRemovingSelectedImageClearsInspectorWithoutStaleContent`, two removals |
 | Sidebar and inspector expanded/collapsed -> relaunch -> persisted state in both directions | `testSidebarCollapseAndExpansionPersistAcrossRelaunchTwice` and `testInspectorCollapseAndExpansionPersistAcrossRelaunchTwice` |
 | Lazy/scrolled cell; repeated view changes; empty/single/multiple selection | `testViewModeSwitchingPreservesSelectionAndKeyboardFocusRepeatedly` |
-| Hosted display smaller than preferred window, including titlebar/menu bar | `testUITestWindowFitsVisibleScreenIncludingToolbarChrome` |
+| Hosted display smaller than preferred window, including titlebar/menu bar | `testUITestWindowFitsVisibleScreenIncludingToolbarChrome`; `testAppLaunchesTwice` checks the actual window bounds on both launches |
 
 Pointer tests wait for enabled, hittable targets. They must not silently replace
 a failed click with a keyboard shortcut or click the coordinates of an offscreen
 control. Window sizing fits the fixture window to the display's visible frame.
+Fixture launches omit the normal 1100 x 700 minimum content constraint, which
+otherwise overrides that fit on smaller hosted displays. Normal launches retain
+their existing minimum size.
 
 Run the signed `xcodebuild ... test` command above to verify this matrix. The
 advisory UI job's outcome must be inspected separately from the workflow's

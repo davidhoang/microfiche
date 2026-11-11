@@ -20,8 +20,10 @@ struct MicroficheApp: App {
         WindowGroup {
             ContentView()
                 .frame(
-                    minWidth: WindowLayout.minimumWidth,
-                    minHeight: WindowLayout.minimumHeight
+                    // Hosted displays can be smaller than the normal minimum.
+                    // Let UITestHost fit only fixture windows to that display.
+                    minWidth: UITestHost.usesFixtureLibrary ? 0 : WindowLayout.minimumWidth,
+                    minHeight: UITestHost.usesFixtureLibrary ? 0 : WindowLayout.minimumHeight
                 )
         }
         .defaultSize(width: WindowLayout.defaultWidth, height: WindowLayout.defaultHeight)
