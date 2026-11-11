@@ -508,7 +508,11 @@ struct ContactSheetSidebarItem: View {
             perform: handleDrop
         )
         .accessibilityElement(children: .combine)
-        .accessibilityValue(isSelected ? "Selected" : "")
+        .accessibilityValue(
+            isSelected
+                ? "Selected, \(contactSheet.imageIDs.count) images"
+                : "\(contactSheet.imageIDs.count) images"
+        )
         .accessibilityAddTraits(
             isSelected ? [.isButton, .isSelected] : [.isButton]
         )
