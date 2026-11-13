@@ -5,6 +5,7 @@
 //  Created by David Hoang on 6/8/25.
 //
 
+import AppKit
 import Darwin
 import XCTest
 
@@ -20,6 +21,16 @@ final class MicroficheUITests: XCTestCase {
     @MainActor
     func testAppLaunchesTwice() throws {
         let app = configuredApp()
+        let screen = try XCTUnwrap(NSScreen.main)
+        let visible = screen.visibleFrame
+        // AppKit screen coordinates have a bottom-left origin; XCTest uses
+        // the top-left of the main display.
+        let visibleBounds = CGRect(
+            x: visible.minX,
+            y: screen.frame.maxY - visible.maxY,
+            width: visible.width,
+            height: visible.height
+        )
 
         for attempt in 1...2 {
             app.launch()
@@ -27,6 +38,9 @@ final class MicroficheUITests: XCTestCase {
                 app.windows.firstMatch.waitForExistence(timeout: 8),
                 "Expected a window on launch attempt \(attempt)"
             )
+            XCTAssertTrue(waitUntil(timeout: 5) {
+                visibleBounds.insetBy(dx: -1, dy: -1).contains(app.windows.firstMatch.frame)
+            }, "Fixture window \(app.windows.firstMatch.frame) must fit \(visibleBounds)")
             app.terminate()
             XCTAssertTrue(app.wait(for: .notRunning, timeout: 8))
         }
