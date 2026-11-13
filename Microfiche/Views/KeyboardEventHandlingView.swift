@@ -8,6 +8,10 @@
 import SwiftUI
 
 enum LibraryKeyboardFocusPolicy {
+    static func shouldRequestFocus(previousRequestID: UUID?, requestID: UUID) -> Bool {
+        previousRequestID != requestID
+    }
+
     static func shouldHandleLibraryKeys(
         isVoiceOverRunning: Bool,
         isTextInputFirstResponder: Bool
@@ -17,6 +21,7 @@ enum LibraryKeyboardFocusPolicy {
 }
 
 struct KeyboardEventHandlingView: NSViewRepresentable {
+    let focusRequestID: UUID
     var onDeletePressed: (_ bypassConfirmation: Bool) -> Void
     var onEscapePressed: () -> Void
     var onSpacebarPressed: () -> Void
@@ -29,6 +34,7 @@ struct KeyboardEventHandlingView: NSViewRepresentable {
         view.onEscapePressed = onEscapePressed
         view.onSpacebarPressed = onSpacebarPressed
         view.onArrowPressed = onArrowPressed
+        view.focusRequestID = focusRequestID
         return view
     }
 
@@ -39,18 +45,32 @@ struct KeyboardEventHandlingView: NSViewRepresentable {
         view.onSpacebarPressed = onSpacebarPressed
         view.onArrowPressed = onArrowPressed
 
-        DispatchQueue.main.async {
-            view.claimFirstResponderIfAppropriate()
+        if LibraryKeyboardFocusPolicy.shouldRequestFocus(
+            previousRequestID: view.focusRequestID,
+            requestID: focusRequestID
+        ) {
+            view.focusRequestID = focusRequestID
+            DispatchQueue.main.async { [weak view] in
+                view?.claimFirstResponderIfAppropriate()
+            }
         }
     }
 
     class KeyView: NSView {
+        var focusRequestID: UUID?
         var onDeletePressed: ((Bool) -> Void)?
         var onEscapePressed: (() -> Void)?
         var onSpacebarPressed: (() -> Void)?
         var onArrowPressed: ((ArrowDirection) -> Void)?
 
         override var acceptsFirstResponder: Bool { true }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            DispatchQueue.main.async { [weak self] in
+                self?.claimFirstResponderIfAppropriate()
+            }
+        }
 
         func claimFirstResponderIfAppropriate() {
             guard let window else { return }

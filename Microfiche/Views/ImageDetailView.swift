@@ -57,7 +57,7 @@ struct ImageDetailView: View {
                     .accessibilityLabel("Share \(file.name)")
                     .accessibilityIdentifier("detail.share")
 
-                    Menu {
+                    Menu("More actions for \(file.name)", systemImage: "ellipsis") {
                         Button("Reveal in Finder") {
                             NSWorkspace.shared.activateFileViewerSelecting([file.url])
                         }
@@ -65,9 +65,8 @@ struct ImageDetailView: View {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(file.url.path, forType: .string)
                         }
-                    } label: {
-                        Image(systemName: "ellipsis")
                     }
+                    .labelStyle(.iconOnly)
                     .help("More")
                     .accessibilityLabel("More actions for \(file.name)")
                     .accessibilityIdentifier("detail.more")
@@ -262,7 +261,7 @@ struct ImageMetadataInspectorView: View {
     private var selectedLabel: FinderLabel? {
         switch summary.label {
         case .empty:
-            return .none
+            return FinderLabel.none
         case .shared(let label):
             return label
         case .mixed:
@@ -606,7 +605,11 @@ struct FinderLabelPicker: View {
                     .foregroundStyle(.tertiary)
             }
 
-            HStack(spacing: 10) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 28, maximum: 28), spacing: 10)],
+                alignment: .leading,
+                spacing: 10
+            ) {
                 labelDot(for: .none)
 
                 ForEach(FinderLabel.coloredCases) { label in
@@ -670,6 +673,7 @@ struct FinderLabelPicker: View {
         .buttonStyle(.plain)
         .help(label.displayName)
         .accessibilityLabel(label.displayName)
+        .accessibilityIdentifier("inspector.label.\(label.rawValue)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

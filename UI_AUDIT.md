@@ -63,8 +63,7 @@ states explicitly; a successful build is not interaction verification.
 
 ## Implementation
 
-The implementation described below is being validated and will be published in
-a separate code commit after this audit document.
+The follow-up code commit implements the six findings above.
 
 - The detail More Actions menu uses a native text-and-symbol label, visually
   reduced to its icon without discarding its accessible name.
@@ -95,11 +94,68 @@ The initial combined unit/UI run was stopped after stalling in the existing
 unit test, before the UI checks started. Existing iCloud tests also emitted
 background-thread publishing warnings. This is not a passing full suite.
 
-The focused run passed 16 relevant unit tests and three UI regressions (native
-menu title/actions, all Finder labels in a narrow inspector, and last-item
-visibility in grid/list at minimum/default window sizes). Repeated preview
-dismissal/navigation and native sidebar/rename checks also passed. The broader
-interaction run and final standalone build are still pending.
+Across the focused runs, 16 relevant unit tests, 15 functional UI regressions,
+and the separate light/dark launch executions passed. The final standalone
+Debug build also passed.
+
+The broader UI run initially failed drag and comments-editor checks. Investigation
+corrected test-harness assumptions rather than relaxing behavior assertions:
+macOS drags now use the mouse API and verify the sheet count; context-menu queries
+cannot match the main File menu; text editing is verified by actual pointer focus,
+typed input, and readback instead of the native text view's false `AXEnabled`.
+Thumbnail resizing also uses the real slider thumb and asserts both 80-point and
+180-point values. Foreground-window interference was removed before final reruns.
+
+| Exercised area | Verified transitions |
+| --- | --- |
+| Selection/input | None, first, different, same, rapid repetition, Command/Shift selection, arrows, removal; selected/unselected double-click; completed drag and context menu followed by later clicks, twice in grid/list |
+| Preview | Close button, Escape, Space, backdrop, next/previous image, and restored browsing keyboard focus in both views |
+| Inspector/detail | Panels open/close both ways; selection disappears; actual text editing twice; all eight labels selected twice at minimum window size; named native detail menu/actions twice |
+| Navigation/layout | Native sidebar selection and repeated contact-sheet rename; repeated grid/list changes, scrolled cells, last-item visibility at default/minimum sizes and minimum/maximum thumbnail sizes |
+| Toolbar/appearance | Library/detail controls, filters, search, sorting, panel controls at toolbar edges, deterministic accessibility appearance flags; light/dark launches |
+
+Local evidence: `/tmp/Microfiche-UIFix-focused-5.xcresult`,
+`/tmp/Microfiche-UIFix-final-ui.xcresult` (broader run with the two initial failures),
+`/tmp/Microfiche-UIFix-unobstructed.xcresult` (final resizing check passed),
+`/tmp/Microfiche-UIFix-native-semantics.xcresult` (both corrected checks passed),
+and `/tmp/Microfiche-UIFix-final-build.log`. These are separate runs, not a claim
+that the full default suite passed.
+
+### Verification commands
+
+Run from the repository root with
+`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`:
+
+```sh
+xcodebuild -project Microfiche.xcodeproj -scheme Microfiche \
+  -configuration Debug -destination 'generic/platform=macOS' \
+  CODE_SIGNING_ALLOWED=NO build
+
+xcodebuild -project Microfiche.xcodeproj -scheme Microfiche \
+  -configuration Debug -destination 'platform=macOS' \
+  -parallel-testing-enabled NO -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 150 \
+  -maximum-test-execution-time-allowance 180 \
+  -only-testing:MicroficheUITests/MicroficheUITests/testDragAndContextMenuDoNotDisableLaterClicksTwiceInBothViews \
+  -only-testing:MicroficheUITests/MicroficheUITests/testInspectorTextEditingKeepsKeyboardInputOutOfLibraryNavigation \
+  -only-testing:MicroficheUITests/MicroficheUITests/testFloatingViewControlNeverCoversLastItemRepeatedly \
+  test
+```
+
+The signed test command above isolates the final corrected checks. The preceding
+broader signed run selected the interaction, preview, sidebar, appearance,
+search/filter/sort, panel-toolbar, and launch cases individually. The focused
+unit run selected 16 relevant state/navigation/accessibility checks rather than
+claiming a passing full suite.
+
+### Remaining unverified states
+
+- Actual VoiceOver navigation and keyboard traversal of every non-text control.
+- Actual system accessibility settings, beyond deterministic test flags.
+- Photo legibility and mixed-aspect-ratio content, since fixtures are swatches.
+- Preview failure/retry/cancellation through the rendered UI, real iCloud
+  placeholders, and disconnected external-drive recovery.
+- Export dialogs and welcome-onboarding focus/modal behavior after this pass.
 
 ## References
 

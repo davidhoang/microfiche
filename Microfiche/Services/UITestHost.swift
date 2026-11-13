@@ -47,7 +47,9 @@ enum UITestHost {
     static func applyWindowLayoutIfNeeded() {
         guard isLaunchedForUITesting else { return }
 
-        let size = NSSize(width: 1440, height: 900)
+        let size = ProcessInfo.processInfo.arguments.contains("--ui-testing-minimum-window")
+            ? NSSize(width: 1100, height: 700)
+            : NSSize(width: 1440, height: 900)
         for window in NSApplication.shared.windows where window.isVisible {
             guard let screen = window.screen ?? NSScreen.main else { continue }
             let preferredFrame = window.frameRect(

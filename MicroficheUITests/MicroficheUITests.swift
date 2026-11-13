@@ -582,7 +582,7 @@ final class MicroficheUITests: XCTestCase {
                 XCTAssertTrue(waitUntilChosen(source))
                 let start = source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
                 let end = destination.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-                start.press(forDuration: 0.2, thenDragTo: end)
+                start.click(forDuration: 0.2, thenDragTo: end)
                 expectedCount += 1
                 XCTAssertTrue(waitUntil(timeout: 8) {
                     let value = destination.value as? String
@@ -595,10 +595,13 @@ final class MicroficheUITests: XCTestCase {
                 XCTAssertTrue(waitUntilChosen(next))
                 XCTAssertTrue(waitUntilNotChosen(source))
                 next.rightClick()
-                let archive = app.menuItems["Move to Archive"]
+                let contextMenu = app.menus.containing(.menuItem, identifier: "Open in Finder").firstMatch
+                XCTAssertTrue(contextMenu.waitForExistence(timeout: 5))
+                let archive = contextMenu.menuItems["Move to Archive"]
                 XCTAssertTrue(archive.waitForExistence(timeout: 5))
+                XCTAssertTrue(archive.isHittable)
                 app.typeKey(.escape, modifierFlags: [])
-                XCTAssertTrue(archive.waitForNonExistence(timeout: 5))
+                XCTAssertTrue(contextMenu.waitForNonExistence(timeout: 5))
                 let later = waitForFixtureImage(10, in: app)
                 tap(later)
                 XCTAssertTrue(waitUntilChosen(later))
@@ -701,10 +704,16 @@ final class MicroficheUITests: XCTestCase {
             )
         )
         XCTAssertTrue(element("detail.share", in: app).exists)
-        XCTAssertEqual(
-            element("detail.more", in: app).label,
-            "More actions for fixture-02.png"
-        )
+        let more = app.menuButtons["detail.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        // Native macOS menu buttons expose their accessible name as AXTitle.
+        XCTAssertEqual(more.title, "More actions for fixture-02.png")
+        for _ in 0..<2 {
+            tap(more)
+            XCTAssertTrue(app.menuItems["Reveal in Finder"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.menuItems["Copy Path"].exists)
+            app.typeKey(.escape, modifierFlags: [])
+        }
     }
 
     @MainActor
@@ -724,8 +733,12 @@ final class MicroficheUITests: XCTestCase {
             tap(replace)
             let editor = element("inspector.replace-comments.editor", in: app)
             XCTAssertTrue(editor.waitForExistence(timeout: 5))
-            tap(editor)
+            // Editable NSTextView reports AXEnabled=false, unlike NSControl.
+            // Require a real pointer target and prove editing by reading it back.
+            XCTAssertTrue(waitUntil(timeout: 5) { editor.isHittable })
+            editor.click()
             editor.typeText("Keyboard audit \(attempt)")
+            XCTAssertTrue((editor.value as? String)?.contains("Keyboard audit \(attempt)") == true)
             editor.typeKey(.rightArrow, modifierFlags: [])
             XCTAssertTrue(waitUntilChosen(first))
             tap(button("inspector.replace-comments.cancel", in: app))
@@ -756,6 +769,144 @@ final class MicroficheUITests: XCTestCase {
             selectViewMode("list", in: app)
             XCTAssertTrue(element("image.list", in: app).waitForExistence(timeout: 5))
             selectViewMode("grid", in: app)
+        }
+    }
+
+    @MainActor
+    func testQuickPreviewDismissalRestoresBrowsingFocusRepeatedly() throws {
+        let app = configuredApp()
+        app.launch()
+
+        for mode in ["grid", "list"] {
+            selectViewMode(mode, in: app)
+            for dismissal in ["button", "escape", "space", "backdrop"] {
+                tap(waitForFixtureImage(1, in: app))
+                app.typeKey(.space, modifierFlags: [])
+                let preview = element("preview.quick", in: app)
+                XCTAssertTrue(preview.waitForExistence(timeout: 5))
+                XCTAssertTrue(button("preview.close", in: app).isHittable)
+
+                app.typeKey(.rightArrow, modifierFlags: [])
+                XCTAssertTrue(waitUntil(timeout: 5) {
+                    preview.label == "Quick preview of fixture-02.png"
+                })
+                app.typeKey(.leftArrow, modifierFlags: [])
+                XCTAssertTrue(waitUntil(timeout: 5) {
+                    preview.label == "Quick preview of fixture-01.png"
+                })
+
+                switch dismissal {
+                case "button": tap(button("preview.close", in: app))
+                case "escape": app.typeKey(.escape, modifierFlags: [])
+                case "space": app.typeKey(.space, modifierFlags: [])
+                default:
+                    preview.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)).click()
+                }
+                XCTAssertTrue(preview.waitForNonExistence(timeout: 5))
+                XCTAssertTrue(waitUntilChosen(waitForFixtureImage(1, in: app)))
+                app.typeKey(.rightArrow, modifierFlags: [])
+                XCTAssertTrue(waitUntilChosen(waitForFixtureImage(2, in: app)))
+                app.typeKey(.leftArrow, modifierFlags: [])
+                XCTAssertTrue(waitUntilChosen(waitForFixtureImage(1, in: app)))
+            }
+        }
+    }
+
+    @MainActor
+    func testNarrowInspectorLabelsRemainReachableRepeatedly() throws {
+        let app = configuredApp(additionalArguments: ["--ui-testing-minimum-window"])
+        app.launch()
+        tap(waitForFixtureImage(1, in: app))
+        tap(button("inspector.toggle", in: app))
+        let inspector = element("inspector.content", in: app)
+        XCTAssertTrue(inspector.waitForExistence(timeout: 5))
+
+        for _ in 0..<2 {
+            for index in 0...7 {
+                let label = button("inspector.label.\(index)", in: app)
+                XCTAssertTrue(label.waitForExistence(timeout: 5))
+                XCTAssertTrue(label.isHittable)
+                XCTAssertGreaterThanOrEqual(label.frame.minX, inspector.frame.minX)
+                XCTAssertLessThanOrEqual(label.frame.maxX, inspector.frame.maxX)
+                tap(label)
+                XCTAssertTrue(waitUntilChosen(label))
+            }
+        }
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Finder labels in minimum-size window"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    @MainActor
+    func testFloatingViewControlNeverCoversLastItemRepeatedly() throws {
+        for arguments in [[], ["--ui-testing-minimum-window"]] {
+            let app = configuredApp(additionalArguments: arguments)
+            app.launch()
+            for attempt in 0..<2 {
+                for mode in ["list", "grid"] {
+                    let control = button("viewMode.\(mode)", in: app)
+                    XCTAssertTrue(control.waitForExistence(timeout: 5))
+                    XCTAssertTrue(control.isHittable)
+                    tap(control)
+                    XCTAssertTrue(waitUntilChosen(control))
+                    if mode == "grid" {
+                        let slider = app.sliders.firstMatch
+                        XCTAssertTrue(slider.isHittable)
+                        let thumb = slider.valueIndicators.firstMatch
+                        XCTAssertTrue(thumb.exists)
+                        let start = thumb.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                        let end = slider.coordinate(withNormalizedOffset: CGVector(dx: attempt == 0 ? 0.99 : 0.01, dy: 0.5))
+                        start.click(forDuration: 0.1, thenDragTo: end)
+                        XCTAssertEqual(slider.value as? String, "\(attempt == 0 ? 180 : 80) points")
+                    }
+                    element("image.\(mode)", in: app).scroll(byDeltaX: 0, deltaY: -3000)
+                    let last = waitForFixtureImage(24, in: app)
+                    XCTAssertTrue(last.isHittable)
+                    XCTAssertLessThanOrEqual(last.frame.maxY, control.frame.minY)
+                    tap(last)
+                    XCTAssertTrue(waitUntilChosen(last))
+                }
+            }
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testNativeSidebarButtonsAndContactSheetRenameRepeatedly() throws {
+        let app = configuredApp()
+        app.launch()
+        let allImages = button("sidebar.all-images", in: app)
+        XCTAssertTrue(allImages.waitForExistence(timeout: 5))
+
+        for attempt in 1...2 {
+            tap(allImages)
+            let sheet = button("sidebar.contact-sheet.First Review", in: app)
+            XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+            tap(sheet)
+            XCTAssertTrue(waitUntilChosen(sheet))
+            sheet.rightClick()
+            app.menuItems["Rename"].click()
+            let editor = app.textFields["sidebar.contact-sheet-name"]
+            XCTAssertTrue(editor.waitForExistence(timeout: 5))
+            editor.typeKey("a", modifierFlags: .command)
+            editor.typeText("Review \(attempt)")
+            editor.typeKey(.return, modifierFlags: [])
+
+            let renamed = button("sidebar.contact-sheet.Review \(attempt)", in: app)
+            XCTAssertTrue(renamed.waitForExistence(timeout: 5))
+            renamed.rightClick()
+            app.menuItems["Rename"].click()
+            XCTAssertTrue(editor.waitForExistence(timeout: 5))
+            editor.typeKey("a", modifierFlags: .command)
+            editor.typeText("First Review")
+            editor.typeKey(.return, modifierFlags: [])
+            XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+            tap(allImages)
+            XCTAssertTrue(waitUntilChosen(allImages))
+            tap(waitForFixtureImage(1, in: app))
+            app.typeKey(.rightArrow, modifierFlags: [])
+            XCTAssertTrue(waitUntilChosen(waitForFixtureImage(2, in: app)))
         }
     }
 

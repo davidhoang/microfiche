@@ -151,7 +151,7 @@ Don’t steal keys while the user is editing text.
 1. **Matte photo canvas** — `controlBackgroundColor` with quiet separators. No decorative gradients or blur orbs.
 2. **Detail canvas** — Lighter `textBackgroundColor` so the focused image reads as a print on paper.
 3. **Inspector / sidebar material** — Use `microficheSidebarChrome()` (sidebar visual effect) for navigation-adjacent panels.
-4. **Glass budget** — Floating view-mode control and quick-preview panel may use Liquid Glass / materials. Thumbnails, rows, and the grid itself stay matte.
+4. **Glass budget** — The floating view-mode control and preview controls may use Liquid Glass / materials. The quick-preview photo surface, thumbnails, rows, and grid stay matte. Reserve bottom scroll space for the floating view-mode control.
 5. **Legacy card elevation** — `microficheDetailChrome()` is a pre-Tahoe fallback only; do not reintroduce floating content cards on modern macOS.
 
 ---
@@ -213,7 +213,7 @@ Disable animations while the grid size slider is dragging. Prefer `MicroficheMot
 
 ### Welcome onboarding
 - **Files:** `Microfiche/Views/OnboardingView.swift`, `SettingsView.swift`, `Services/UserPreferences.swift`
-- Full-window dimmed overlay + `LiquidGlassPanel` (same modal pattern as quick preview).
+- Full-window dimmed overlay + `LiquidGlassPanel`. Quick Preview uses a matte photo surface with a visible close control instead.
 - Shows once until completed/skipped when **Settings → Onboarding → Show welcome onboarding** is on.
 - Testing: toggle the setting off to suppress; use **Replay Onboarding** or **Help → Replay Welcome Onboarding** to walk through again.
 - **Copy:** Four steps, one job each — in-place library, linked folders/drives, Contact Sheets, Finder metadata. Titles are short and direct; body copy is one instructional sentence plus the payoff. Final CTAs: **Link a Folder** / **Browse Library**.

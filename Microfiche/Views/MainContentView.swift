@@ -217,8 +217,6 @@ struct MainContentView: View {
 
     var body: some View {
         ZStack {
-            mainCanvasBackground
-
             VStack(spacing: 0) {
                 Rectangle()
                     .fill(Color(NSColor.separatorColor).opacity(0.45))
@@ -310,15 +308,17 @@ struct MainContentView: View {
             isTargeted: $isContactSheetDropTargeted,
             perform: handleContactSheetDrop
         )
-        .overlay(alignment: .bottom) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if showsToolbar {
                 FloatingViewModeControl(selection: $viewMode)
                     .background(ImageCellClickExclusion())
+                    .padding(.top, 8)
                     .padding(.bottom, 16)
-                    .zIndex(1)
+                    .frame(maxWidth: .infinity)
                     .transition(.opacity)
             }
         }
+        .background(mainCanvasBackground)
     }
 
     private func handleContactSheetDrop(providers: [NSItemProvider]) -> Bool {
@@ -616,6 +616,7 @@ struct ImageGridView: View {
                     .padding(.vertical, 16)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
+                .accessibilityIdentifier("image.grid")
                 .onAppear {
                     updateColumnCount(for: geometry.size.width)
                 }
@@ -663,7 +664,6 @@ struct ImageGridView: View {
             isResizing ? nil : MicroficheMotion.snap(reducedMotion: reduceMotion),
             value: thumbnailSize
         )
-        .accessibilityIdentifier("image.grid")
         .onDisappear {
             prefetcher.cancel()
         }
@@ -813,6 +813,7 @@ struct ImageListView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 10)
             }
+            .accessibilityIdentifier("image.list")
             .onChange(of: scrollToID) { _, newID in
                 if let id = newID {
                     withAnimation(MicroficheMotion.snap(reducedMotion: reduceMotion)) {
@@ -832,7 +833,6 @@ struct ImageListView: View {
                 )
             }
         }
-        .accessibilityIdentifier("image.list")
         .onDisappear {
             prefetcher.cancel()
         }

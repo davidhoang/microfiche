@@ -104,6 +104,14 @@ Pointer tests wait for enabled, hittable targets. They must not silently replace
 a failed click with a keyboard shortcut or click the coordinates of an offscreen
 control. Window sizing fits the fixture window to the display's visible frame.
 
+Native editable `NSTextView` reports `AXEnabled=false` even when `isEditable`
+is true. For the comments editor, wait for a hittable target, perform a real
+click, and assert that typed text appears in its value. Do not apply this
+exception to buttons or replace a failed pointer action with keyboard input.
+Use mouse `click(forDuration:thenDragTo:)`, not the touch `press` API, for
+macOS drags. Scope context-menu queries to that menu so they cannot match
+hidden items with the same title in the main menu bar.
+
 Run the signed `xcodebuild ... test` command above to verify this matrix. The
 advisory UI job's outcome must be inspected separately from the workflow's
 overall status. A merged PR or a green build is not sufficient to close PCD-26.

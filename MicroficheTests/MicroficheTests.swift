@@ -270,6 +270,25 @@ final class MicroficheTests: XCTestCase {
         ))
     }
 
+    func testLibraryFocusIsRequestedOnlyForNewInteractions() {
+        let first = UUID()
+        let second = UUID()
+        XCTAssertTrue(LibraryKeyboardFocusPolicy.shouldRequestFocus(
+            previousRequestID: nil, requestID: first
+        ))
+        for _ in 0..<2 {
+            XCTAssertFalse(LibraryKeyboardFocusPolicy.shouldRequestFocus(
+                previousRequestID: first, requestID: first
+            ))
+            XCTAssertTrue(LibraryKeyboardFocusPolicy.shouldRequestFocus(
+                previousRequestID: first, requestID: second
+            ))
+            XCTAssertFalse(LibraryKeyboardFocusPolicy.shouldRequestFocus(
+                previousRequestID: second, requestID: second
+            ))
+        }
+    }
+
     func testIncreasedContrastStrengthensSelectionChrome() {
         XCTAssertGreaterThan(
             MicroficheContrast.selectionFillOpacity(increased: true),

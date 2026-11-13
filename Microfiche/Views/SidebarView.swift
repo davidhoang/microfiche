@@ -265,43 +265,39 @@ private struct SidebarStaticRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                .frame(width: 24, height: 24)
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    .frame(width: 24, height: 24)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                    .lineLimit(1)
-                    .foregroundStyle(.primary)
-
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
                         .lineLimit(1)
-                }
-            }
+                        .foregroundStyle(.primary)
 
-            Spacer(minLength: 8)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 8)
+            }
+            .sidebarRow(isSelected: isSelected, isHovered: isHovered)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .sidebarRow(isSelected: isSelected, isHovered: isHovered)
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .onTapGesture(perform: action)
-        .accessibilityElement(children: .combine)
         .accessibilityValue(isSelected ? "Selected" : "")
-        .accessibilityAddTraits(
-            isSelected ? [.isButton, .isSelected] : [.isButton]
-        )
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier(
             title == "All Images" ? "sidebar.all-images" : "sidebar.folder.\(title)"
         )
-        .accessibilityAction(.default) {
-            action()
-        }
     }
 }
 
@@ -445,7 +441,7 @@ struct ContactSheetSidebarItem: View {
         _editedName = State(initialValue: contactSheet.name)
     }
 
-    var body: some View {
+    private var rowContent: some View {
         HStack(spacing: 10) {
             Image(systemName: "square.grid.2x2")
                 .font(.system(size: 13, weight: .semibold))
@@ -455,6 +451,8 @@ struct ContactSheetSidebarItem: View {
             if isEditing {
                 TextField("Name", text: $editedName, onCommit: commitRename)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Contact sheet name")
+                    .accessibilityIdentifier("sidebar.contact-sheet-name")
                     .focused($isNameFocused)
                     .onChange(of: isNameFocused) { _, isFocused in
                         if !isFocused {
@@ -496,34 +494,26 @@ struct ContactSheetSidebarItem: View {
             isDropTargeted: isDropTargeted
         )
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    var body: some View {
+        navigationRow
         .onHover { isHovered = $0 }
-        .onTapGesture {
-            if !isEditing {
-                onSelect()
-            }
-        }
         .onDrop(
             of: ImageDropSupport.acceptedContentTypes,
             isTargeted: $isDropTargeted,
             perform: handleDrop
         )
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: isEditing ? .contain : .combine)
         .accessibilityValue(
             isSelected
                 ? "Selected, \(contactSheet.imageIDs.count) images"
                 : "\(contactSheet.imageIDs.count) images"
         )
-        .accessibilityAddTraits(
-            isSelected ? [.isButton, .isSelected] : [.isButton]
-        )
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier("sidebar.contact-sheet.\(contactSheet.name)")
         .accessibilityLabel(contactSheet.name)
         .accessibilityHint("\(contactSheet.imageIDs.count) images. Accepts image drops.")
-        .accessibilityAction(.default) {
-            if !isEditing {
-                onSelect()
-            }
-        }
         .contextMenu {
             Button("Export PDF…") {
                 onExport()
@@ -535,6 +525,18 @@ struct ContactSheetSidebarItem: View {
             Button("Delete", role: .destructive) {
                 onDelete()
             }
+        }
+    }
+
+    @ViewBuilder
+    private var navigationRow: some View {
+        if isEditing {
+            rowContent
+        } else {
+            Button(action: onSelect) {
+                rowContent
+            }
+            .buttonStyle(.plain)
         }
     }
 

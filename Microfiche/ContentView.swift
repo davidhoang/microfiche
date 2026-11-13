@@ -188,6 +188,7 @@ struct ContentView: View {
     @State private var isResizingGrid = false
     @State private var selectedImageFileIDs: Set<UUID> = []
     @State private var focusedImageFileID: UUID?
+    @State private var libraryKeyboardFocusRequestID = UUID()
     @State private var showDeleteAlert: Bool = false
     @State private var dontAskAgain: Bool
     @State private var pendingDeleteFiles: [ImageFile] = []
@@ -403,6 +404,7 @@ struct ContentView: View {
                     requestArchive(for: selected)
                 }
                 .background(KeyboardEventHandlingView(
+                    focusRequestID: libraryKeyboardFocusRequestID,
                     onDeletePressed: { bypassConfirmation in
                         guard !userPreferences.isPresentingOnboarding else { return }
                         let filesToDelete = imageFiles.filter { selectedImageFileIDs.contains($0.id) }
@@ -501,24 +503,28 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             libraryContent
+                .disabled(isQuickPreviewPresented || userPreferences.isPresentingOnboarding)
+                .accessibilityHidden(isQuickPreviewPresented || userPreferences.isPresentingOnboarding)
 
             if isQuickPreviewPresented, let file = focusedImageFile {
-                    PreviewView(file: file) {
-                        dismissQuickPreview()
-                    }
-                    .transition(.opacity)
-                }
+                PreviewView(
+                    file: file,
+                    onDismiss: dismissQuickPreview,
+                    onNavigate: handleArrowKey
+                )
+                .transition(.opacity)
+            }
 
-                if userPreferences.isPresentingOnboarding {
-                    OnboardingView(
-                        onLinkFolder: linkFolder,
-                        onFinished: {
-                            userPreferences.completeOnboarding()
-                        }
-                    )
-                    .transition(.opacity)
-                    .zIndex(10)
-                }
+            if userPreferences.isPresentingOnboarding {
+                OnboardingView(
+                    onLinkFolder: linkFolder,
+                    onFinished: {
+                        userPreferences.completeOnboarding()
+                    }
+                )
+                .transition(.opacity)
+                .zIndex(10)
+            }
         }
         .animation(
             MicroficheMotion.snap(reducedMotion: reduceMotion),
@@ -678,15 +684,10 @@ struct ContentView: View {
             }
             .hideSharedBackgroundIfAvailable()
 
-            ToolbarItem(placement: .automatic) {
+            ToolbarItemGroup(placement: .automatic) {
                 filterMenu
-            }
-            .hideSharedBackgroundIfAvailable()
-
-            ToolbarItem(placement: .automatic) {
                 sortMenu
             }
-            .hideSharedBackgroundIfAvailable()
 
             if let activeContactSheet {
                 ToolbarItem(placement: .automatic) {
@@ -699,7 +700,6 @@ struct ContentView: View {
                     .accessibilityLabel("Export \(activeContactSheet.name)")
                     .accessibilityIdentifier("export-contact-sheet")
                 }
-                .hideSharedBackgroundIfAvailable()
             }
         }
 
@@ -728,7 +728,6 @@ struct ContentView: View {
                 )
                 .accessibilityIdentifier("inspector.toggle")
             }
-            .hideSharedBackgroundIfAvailable()
         }
     }
 
@@ -897,7 +896,8 @@ struct ContentView: View {
             Button("Clear Filters", action: clearFilters)
             .disabled(!hasActiveFilter)
         } label: {
-            Image(systemName: hasActiveFilter ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+            Image(systemName: "line.3.horizontal.decrease")
+                .foregroundStyle(hasActiveFilter ? Color.accentColor : Color.primary)
         }
         .help("Filter Library")
         .accessibilityLabel("Filter library")
@@ -927,9 +927,7 @@ struct ContentView: View {
                 Text(sortDescendingLabel).tag(LibrarySortDirection.descending)
             }
         } label: {
-            Image(systemName: sortDirection == .ascending
-                ? "arrow.up.arrow.down.circle"
-                : "arrow.down.arrow.up.circle")
+            Image(systemName: "arrow.up.arrow.down")
         }
         .help("Sort Library")
         .accessibilityLabel("Sort library")
@@ -1224,6 +1222,7 @@ struct ContentView: View {
     // MARK: - Selection
 
     private func handleImageSelection(for fileID: UUID) {
+        libraryKeyboardFocusRequestID = UUID()
         applyLibrarySelection(
             LibrarySelectionTransition.applyingPointerClick(
                 fileID: fileID,
@@ -1552,6 +1551,7 @@ struct ContentView: View {
 
     private func dismissQuickPreview() {
         isQuickPreviewPresented = false
+        libraryKeyboardFocusRequestID = UUID()
         requestScrollToFocusedImage()
     }
 
