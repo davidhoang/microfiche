@@ -97,7 +97,8 @@ struct ImageDetailView: View {
                     SVGImageView(url: file.url)
                         .aspectRatio(contentMode: .fit)
                 } else {
-                    RecoverablePreviewImage(url: file.url)
+                    RecoverablePreviewImage(url: file.url, allowsZoom: true)
+                        .id(file.id)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

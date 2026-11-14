@@ -112,6 +112,11 @@ final class PreviewImageLoadModel: ObservableObject {
 
     private var task: Task<Void, Never>?
     private var url: URL?
+    private let loadOriginal: Bool
+
+    init(loadOriginal: Bool = false) {
+        self.loadOriginal = loadOriginal
+    }
 
     func prepare(url: URL) {
         let itemState = url.iCloudItemState
@@ -145,7 +150,12 @@ final class PreviewImageLoadModel: ObservableObject {
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                let loaded = try await PreviewImageCache.shared.image(for: url)
+                let loaded: NSImage
+                if loadOriginal {
+                    loaded = try await OriginalImageLoader.image(for: url)
+                } else {
+                    loaded = try await PreviewImageCache.shared.image(for: url)
+                }
                 try Task.checkCancellation()
                 guard self.url == url else { return }
                 image = loaded

@@ -7,18 +7,30 @@ import SwiftUI
 
 struct RecoverablePreviewImage: View {
     let url: URL
-    var loadingLabel = "Loading image…"
+    let loadingLabel: String
+    let allowsZoom: Bool
 
-    @StateObject private var model = PreviewImageLoadModel()
+    @StateObject private var model: PreviewImageLoadModel
+
+    init(url: URL, loadingLabel: String = "Loading image…", allowsZoom: Bool = false) {
+        self.url = url
+        self.loadingLabel = loadingLabel
+        self.allowsZoom = allowsZoom
+        _model = StateObject(wrappedValue: PreviewImageLoadModel(loadOriginal: allowsZoom))
+    }
 
     var body: some View {
         Group {
             if let image = model.image {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fit)
-                    .accessibilityIdentifier("image-load.loaded")
+                if allowsZoom {
+                    ZoomableDetailImage(image: image)
+                } else {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .accessibilityIdentifier("image-load.loaded")
+                }
             } else {
                 statusContent
             }

@@ -579,6 +579,67 @@ final class MicroficheUITests: XCTestCase {
     }
 
     @MainActor
+    func testDetailFitActualSizeAndPanningResetRepeatedly() throws {
+        let app = configuredApp(additionalArguments: ["--ui-testing-zoom-images"])
+        app.launch()
+        for mode in ["grid", "list"] {
+            selectViewMode(mode, in: app)
+            for index in [1, 2] {
+                for _ in 0..<2 {
+                    let image = waitForFixtureImage(index, in: app)
+                    tap(image)
+                    image.doubleClick()
+                    let canvas = element("detail.zoom.canvas", in: app)
+                    XCTAssertTrue(canvas.waitForExistence(timeout: 10))
+                    XCTAssertTrue(waitUntil {
+                        canvas.value as? String == "Fit, horizontal offset 0, vertical offset 0"
+                    })
+                    let fit = button("detail.zoom.fit", in: app)
+                    let actualSize = button("detail.zoom.actualSize", in: app)
+                    for _ in 0..<2 {
+                        tap(actualSize)
+                        XCTAssertEqual(actualSize.value as? String, "Selected")
+                        let centered = "100%, horizontal offset 0, vertical offset 0"
+                        XCTAssertTrue(waitUntil { canvas.value as? String == centered })
+                        XCTAssertTrue(canvas.isHittable)
+                        canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.6))
+                            .click(forDuration: 0.1, thenDragTo:
+                                canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.35)))
+                        XCTAssertTrue(waitUntil { canvas.value as? String != centered })
+                        XCTAssertTrue((canvas.value as? String)?.hasPrefix("100%") == true)
+                        tap(button("detail.inspector.toggle", in: app))
+                        XCTAssertTrue((canvas.value as? String)?.hasPrefix("100%") == true)
+                        tap(button("detail.inspector.toggle", in: app))
+                        tap(fit)
+                        XCTAssertEqual(fit.value as? String, "Selected")
+                        XCTAssertTrue(waitUntil {
+                            canvas.value as? String == "Fit, horizontal offset 0, vertical offset 0"
+                        })
+                    }
+                    // Inspector changes exercise viewport resizing without resetting the image.
+                    for _ in 0..<2 {
+                        tap(button("detail.inspector.toggle", in: app))
+                        XCTAssertEqual(canvas.value as? String, "Fit, horizontal offset 0, vertical offset 0")
+                    }
+                    tap(actualSize)
+                    app.typeKey(.escape, modifierFlags: [])
+                    XCTAssertTrue(canvas.waitForNonExistence(timeout: 5))
+                }
+            }
+        }
+        let small = waitForFixtureImage(3, in: app)
+        tap(small)
+        small.doubleClick()
+        let canvas = element("detail.zoom.canvas", in: app)
+        XCTAssertTrue(canvas.waitForExistence(timeout: 10))
+        tap(button("detail.zoom.actualSize", in: app))
+        canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.6))
+            .click(forDuration: 0.1, thenDragTo:
+                canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.35)))
+        XCTAssertEqual(canvas.value as? String, "100%, horizontal offset 0, vertical offset 0")
+    }
+
+    @MainActor
     func testDragAndContextMenuDoNotDisableLaterClicksTwiceInBothViews() throws {
         let app = configuredApp()
         app.launch()

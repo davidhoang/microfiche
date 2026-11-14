@@ -15,6 +15,7 @@ Microfiche is a native macOS image library for browsing folders in place. It lin
 - Local tags, labels, comments, and source metadata
 - EXIF/ImageIO camera and exposure details
 - Quick preview and focused detail view
+- Fit / pixel-accurate 100% photo inspection with drag-to-pan in detail view
 - Rename, Reveal in Finder, Open, Copy Path, Share, and Move to Trash
 - Keyboard navigation and macOS accessibility support
 

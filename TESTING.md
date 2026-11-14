@@ -119,6 +119,38 @@ Run the signed `xcodebuild ... test` command above to verify this matrix. The
 advisory UI job's outcome must be inspected separately from the workflow's
 overall status. A merged PR or a green build is not sufficient to close PCD-26.
 
+## Detail photo zoom and pan
+
+The detail view starts in Fit mode. Fit preserves aspect ratio without enlarging
+small images; 100% maps one source pixel to one display pixel, including Retina
+displays. Dragging pans only overflowing axes and stops at the image edges.
+Selecting Fit or reopening detail resets the pan position. PDF and SVG viewers
+and Quick Preview keep their existing behavior.
+
+Affected-state coverage:
+
+- `ImageViewportTests`: landscape/portrait/small images, zero-size viewport,
+  standard/Retina scales, repeated Fit/100% transitions, repeated panning, every
+  edge, resizing and display-scale reclamping.
+- `OriginalImageLoaderTests`: original pixels beyond the 2,000-pixel preview
+  limit, EXIF rotation, unreadable image -> replacement -> successful retry
+  twice, and cancellation.
+- `testDetailFitActualSizeAndPanningResetRepeatedly`: opt-in landscape/portrait
+  checkerboards, repeated zoom/pan/Fit, inspector resizing, reopening and
+  switching images in grid/list, and a small image that cannot pan.
+
+Run `xcodebuild` with the project/scheme/Debug/macOS arguments above and
+`-only-testing:MicroficheTests/ImageViewportTests`,
+`-only-testing:MicroficheTests/OriginalImageLoaderTests`, and
+`-only-testing:MicroficheUITests/MicroficheUITests/testDetailFitActualSizeAndPanningResetRepeatedly`.
+Also rerun the existing detail double-click and accessibility regressions.
+
+Manual Mac checks: repeated dragging after resize, moving between standard and
+Retina displays, VoiceOver scroll actions, light/dark appearance, Reduce Motion,
+real iCloud download/failure/retry/cancellation, and large camera originals.
+These require native validation; a Linux geometry check does not verify SwiftUI,
+ImageIO decoding, or rendered loading/recovery states.
+
 ## Automated test expectations
 
 - Put pure state-transition and navigation coverage in `MicroficheTests`.
