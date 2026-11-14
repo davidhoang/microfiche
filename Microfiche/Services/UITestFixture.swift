@@ -4,6 +4,7 @@
 //
 
 #if DEBUG
+import AppKit
 import Foundation
 
 @MainActor
@@ -35,7 +36,31 @@ struct UITestFixture {
                 String(format: "fixture-%02d.png", index)
             )
             do {
-                try pngData.write(to: url)
+                if arguments.contains("--ui-testing-zoom-images"), index <= 2 {
+                    let width = index == 1 ? 3200 : 1600
+                    let height = index == 1 ? 1600 : 3200
+                    let bitmap = NSBitmapImageRep(
+                        bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+                        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                        isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+                    )!
+                    let context = NSGraphicsContext(bitmapImageRep: bitmap)!
+                    NSGraphicsContext.saveGraphicsState()
+                    NSGraphicsContext.current = context
+                    for row in 0..<8 {
+                        for column in 0..<8 {
+                            (row + column).isMultiple(of: 2) ? NSColor.systemBlue.setFill() : NSColor.systemOrange.setFill()
+                            NSRect(
+                                x: column * width / 8, y: row * height / 8,
+                                width: width / 8, height: height / 8
+                            ).fill()
+                        }
+                    }
+                    NSGraphicsContext.restoreGraphicsState()
+                    try bitmap.representation(using: .png, properties: [:])!.write(to: url)
+                } else {
+                    try pngData.write(to: url)
+                }
             } catch {
                 preconditionFailure("Unable to write UI test image: \(error)")
             }
