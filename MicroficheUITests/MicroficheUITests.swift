@@ -591,7 +591,7 @@ final class MicroficheUITests: XCTestCase {
                     image.doubleClick()
                     let canvas = element("detail.zoom.canvas", in: app)
                     XCTAssertTrue(canvas.waitForExistence(timeout: 10))
-                    XCTAssertTrue(waitUntil {
+                    XCTAssertTrue(waitUntil(timeout: 5) {
                         canvas.value as? String == "Fit, horizontal offset 0, vertical offset 0"
                     })
                     let fit = button("detail.zoom.fit", in: app)
@@ -600,19 +600,19 @@ final class MicroficheUITests: XCTestCase {
                         tap(actualSize)
                         XCTAssertEqual(actualSize.value as? String, "Selected")
                         let centered = "100%, horizontal offset 0, vertical offset 0"
-                        XCTAssertTrue(waitUntil { canvas.value as? String == centered })
+                        XCTAssertTrue(waitUntil(timeout: 5) { canvas.value as? String == centered })
                         XCTAssertTrue(canvas.isHittable)
                         canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.6))
                             .click(forDuration: 0.1, thenDragTo:
                                 canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.35)))
-                        XCTAssertTrue(waitUntil { canvas.value as? String != centered })
+                        XCTAssertTrue(waitUntil(timeout: 5) { canvas.value as? String != centered })
                         XCTAssertTrue((canvas.value as? String)?.hasPrefix("100%") == true)
                         tap(button("detail.inspector.toggle", in: app))
                         XCTAssertTrue((canvas.value as? String)?.hasPrefix("100%") == true)
                         tap(button("detail.inspector.toggle", in: app))
                         tap(fit)
                         XCTAssertEqual(fit.value as? String, "Selected")
-                        XCTAssertTrue(waitUntil {
+                        XCTAssertTrue(waitUntil(timeout: 5) {
                             canvas.value as? String == "Fit, horizontal offset 0, vertical offset 0"
                         })
                     }
