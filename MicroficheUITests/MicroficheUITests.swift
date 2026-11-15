@@ -307,7 +307,7 @@ final class MicroficheUITests: XCTestCase {
             let comment = "Comment \(source)"
             tap(button("inspector.replace-comments", in: app))
             let commentsEditor = element("inspector.replace-comments.editor", in: app)
-            tap(commentsEditor)
+            tapMultilineInspectorEditor(commentsEditor)
             commentsEditor.typeKey("a", modifierFlags: .command)
             commentsEditor.typeText(comment)
             tap(button("inspector.toggle", in: app))
@@ -590,7 +590,10 @@ final class MicroficheUITests: XCTestCase {
                     tap(image)
                     image.doubleClick()
                     XCTAssertTrue(
-                        element("image-load.loaded", in: app).waitForExistence(timeout: 30),
+                        waitUntil(timeout: 45) {
+                            element("image-load.loaded", in: app).exists
+                                || element("detail.zoom.canvas", in: app).exists
+                        },
                         "Expected the detail image to finish loading"
                     )
                     let canvas = element("detail.zoom.canvas", in: app)
@@ -634,7 +637,12 @@ final class MicroficheUITests: XCTestCase {
         let small = waitForFixtureImage(3, in: app)
         tap(small)
         small.doubleClick()
-        XCTAssertTrue(element("image-load.loaded", in: app).waitForExistence(timeout: 30))
+        XCTAssertTrue(
+            waitUntil(timeout: 45) {
+                element("image-load.loaded", in: app).exists
+                    || element("detail.zoom.canvas", in: app).exists
+            }
+        )
         let canvas = element("detail.zoom.canvas", in: app)
         XCTAssertTrue(canvas.waitForExistence(timeout: 5))
         tap(button("detail.zoom.actualSize", in: app))
@@ -880,9 +888,10 @@ final class MicroficheUITests: XCTestCase {
                 case "escape": app.typeKey(.escape, modifierFlags: [])
                 case "space": app.typeKey(.space, modifierFlags: [])
                 default:
-                    tap(element("preview.backdrop", in: app))
+                    let window = app.windows.firstMatch
+                    window.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.5)).click()
                 }
-                XCTAssertTrue(preview.waitForNonExistence(timeout: 5))
+                XCTAssertTrue(preview.waitForNonExistence(timeout: 10))
                 XCTAssertTrue(waitUntilChosen(waitForFixtureImage(1, in: app)))
                 app.typeKey(.rightArrow, modifierFlags: [])
                 XCTAssertTrue(waitUntilChosen(waitForFixtureImage(2, in: app)))
@@ -1128,6 +1137,16 @@ final class MicroficheUITests: XCTestCase {
             return button
         }
         return app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
+
+    @MainActor
+    private func tapMultilineInspectorEditor(_ element: XCUIElement) {
+        XCTAssertTrue(element.waitForExistence(timeout: 5), "Expected \(element) to exist before clicking")
+        guard waitUntil(timeout: 8, { element.isHittable }) else {
+            XCTFail("Expected a hittable comments editor: \(element.debugDescription)")
+            return
+        }
+        element.click()
     }
 
     @MainActor

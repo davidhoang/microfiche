@@ -403,6 +403,9 @@ struct ImageMetadataInspectorView: View {
                         } else if replaceIdentifier == "inspector.replace-where-from" {
                             isEditingComments = false
                         }
+                        #if os(macOS)
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        #endif
                         draft.wrappedValue = displayed
                         isEditing.wrappedValue = true
                     }
