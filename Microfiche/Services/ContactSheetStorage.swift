@@ -128,6 +128,58 @@ class ContactSheetStorage: ObservableObject {
         save()
     }
 
+    func imageID(forFileURL url: URL) -> UUID? {
+        existingImageID(for: url.standardizedFileURL)
+    }
+
+    @discardableResult
+    func removeImages(withFileURLs urls: [URL], from contactSheetID: UUID) -> Int {
+        guard let index = contactSheets.firstIndex(where: { $0.id == contactSheetID }) else {
+            return 0
+        }
+
+        var removedCount = 0
+        var sheet = contactSheets[index]
+        var seenPaths = Set<String>()
+
+        for url in urls.map({ $0.standardizedFileURL }) {
+            guard seenPaths.insert(url.path).inserted,
+                  let imageID = imageID(forFileURL: url) else { continue }
+            let before = sheet.imageIDs.count
+            sheet.removeImage(imageID)
+            if sheet.imageIDs.count < before {
+                removedCount += 1
+            }
+        }
+
+        guard removedCount > 0 else { return 0 }
+
+        contactSheets[index] = sheet
+        cleanupOrphanedImages(excludingIDs: [])
+        save()
+        return removedCount
+    }
+
+    func moveImage(imageID: UUID, before referenceImageID: UUID, in contactSheetID: UUID) {
+        guard imageID != referenceImageID,
+              let index = contactSheets.firstIndex(where: { $0.id == contactSheetID }),
+              let nextIDs = ContactSheetCuration.orderedImageIDs(
+                contactSheets[index].imageIDs,
+                moving: imageID,
+                before: referenceImageID
+              ) else { return }
+
+        contactSheets[index].imageIDs = nextIDs
+        contactSheets[index].modifiedAt = Date()
+        save()
+    }
+
+    func moveImage(withFileURL url: URL, beforeReferenceFileURL referenceURL: URL, in contactSheetID: UUID) {
+        guard let movedImageID = imageID(forFileURL: url),
+              let referenceImageID = imageID(forFileURL: referenceURL) else { return }
+        moveImage(imageID: movedImageID, before: referenceImageID, in: contactSheetID)
+    }
+
     func getImage(byID id: UUID) -> ContactSheetImage? {
         return imageMap[id]
     }

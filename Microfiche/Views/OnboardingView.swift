@@ -142,7 +142,7 @@ struct OnboardingStep: Identifiable, Equatable {
             id: "contact-sheets",
             symbolName: "rectangle.stack",
             title: "Keep selects on Contact Sheets",
-            message: "Gather images into Contact Sheets from any linked folder. Sheets stay in your library even when a drive is offline."
+            message: "Gather images into Contact Sheets from any linked folder. Reorder tiles when a sheet is open and build a mood board without moving your originals."
         ),
         OnboardingStep(
             id: "metadata",

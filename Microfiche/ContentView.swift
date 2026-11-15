@@ -352,6 +352,11 @@ struct ContentView: View {
                         lastSelectedLibraryFolderID = id.uuidString
                     case .contactSheet(let id):
                         imageFiles = contactSheetStorage.getImages(for: id)
+                        if gridThumbnailSize < ContactSheetLayoutMetrics.preferredThumbnailSize {
+                            gridThumbnailSize = ContactSheetLayoutMetrics.preferredThumbnailSize
+                            liveGridThumbnailSize = nil
+                        }
+                        viewMode = .grid
                     case .none:
                         imageFiles = []
                     }
@@ -408,13 +413,18 @@ struct ContentView: View {
                     onDeletePressed: { bypassConfirmation in
                         guard !userPreferences.isPresentingOnboarding else { return }
                         let filesToDelete = imageFiles.filter { selectedImageFileIDs.contains($0.id) }
-                        if !filesToDelete.isEmpty {
-                            if bypassConfirmation || dontAskAgain {
-                                moveFilesToTrash(filesToDelete)
-                            } else {
-                                pendingDeleteFiles = filesToDelete
-                                showDeleteAlert = true
-                            }
+                        guard !filesToDelete.isEmpty else { return }
+
+                        if let activeContactSheet {
+                            removeSelectedImagesFromContactSheet(sheetID: activeContactSheet.id)
+                            return
+                        }
+
+                        if bypassConfirmation || dontAskAgain {
+                            moveFilesToTrash(filesToDelete)
+                        } else {
+                            pendingDeleteFiles = filesToDelete
+                            showDeleteAlert = true
                         }
                     },
                     onEscapePressed: {
@@ -627,8 +637,13 @@ struct ContentView: View {
                 onRename: renameFile,
                 contactSheets: contactSheetStorage.contactSheets,
                 activeContactSheet: activeContactSheet,
+                isContactSheetLayout: activeContactSheet != nil,
                 onAddToContactSheet: handleAddToContactSheet,
                 onDropToContactSheet: handleDropToContactSheet,
+                onReorderContactSheetImage: handleReorderContactSheetImage,
+                onRemoveFromActiveContactSheet: activeContactSheet == nil
+                    ? nil
+                    : removeSelectedOrFileFromActiveContactSheet,
                 onArchive: handleArchiveRequest(for:)
             )
             .inspector(isPresented: libraryInspectorBinding) {
@@ -686,7 +701,10 @@ struct ContentView: View {
 
             ToolbarItemGroup(placement: .automatic) {
                 filterMenu
-                sortMenu
+                if activeContactSheet == nil {
+                    sortMenu
+                }
+                contactSheetCurationMenu
             }
 
             if let activeContactSheet {
@@ -779,6 +797,20 @@ struct ContentView: View {
         // against partial metadata could discard a still-valid selection/route.
         guard loadedSearchMetadata == request.metadata
                 || !request.query.requiresMetadata else { return }
+
+        if activeContactSheet != nil {
+            guard let results = LibrarySearch.filteredPreservingOrder(
+                in: imageFiles,
+                metadata: searchMetadataByFileID,
+                query: request.query
+            ), !Task.isCancelled, request == searchRequest else { return }
+            displayedImageFiles = results
+            completedSearchRequest = request
+            pruneSelectionToVisibleFiles()
+            requestScrollToFocusedImage()
+            return
+        }
+
         guard let results = await LibrarySearch.evaluate(
             files: imageFiles,
             metadata: searchMetadataByFileID,
@@ -1180,8 +1212,133 @@ struct ContentView: View {
         guard SupportedImageExtensions.contains(imageURL) else { return }
         _ = contactSheetStorage.addImage(from: imageURL, to: sheetID)
 
+        refreshContactSheetImagesIfNeeded(sheetID: sheetID)
+    }
+
+    private func handleAddSelectionToContactSheet(sheetID: UUID) {
+        let urls = selectedImageFiles.map(\.url).filter {
+            SupportedImageExtensions.contains($0)
+        }
+        guard !urls.isEmpty else { return }
+
+        let sheetName = contactSheetStorage.contactSheets.first(where: { $0.id == sheetID })?.name
+            ?? "Contact Sheet"
+        let previousCount = contactSheetStorage.contactSheets.first(where: { $0.id == sheetID })?
+            .imageIDs.count ?? 0
+        _ = contactSheetStorage.addImages(from: urls, to: sheetID)
+        let nextCount = contactSheetStorage.contactSheets.first(where: { $0.id == sheetID })?
+            .imageIDs.count ?? previousCount
+        MicroficheAccessibility.announce(
+            MicroficheAccessibility.dropAnnouncement(
+                addedCount: max(0, nextCount - previousCount),
+                contactSheetName: sheetName
+            )
+        )
+        refreshContactSheetImagesIfNeeded(sheetID: sheetID)
+    }
+
+    private func handleCreateContactSheetFromSelection() {
+        let urls = selectedImageFiles.map(\.url).filter {
+            SupportedImageExtensions.contains($0)
+        }
+        guard !urls.isEmpty else { return }
+
+        let sheet = contactSheetStorage.createContactSheet()
+        _ = contactSheetStorage.addImages(from: urls, to: sheet.id)
+        selection = .contactSheet(sheet.id)
+        imageFiles = contactSheetStorage.getImages(for: sheet.id)
+        selectedImageFileIDs = []
+        focusedImageFileID = nil
+        MicroficheAccessibility.announce(
+            MicroficheAccessibility.dropAnnouncement(
+                addedCount: urls.count,
+                contactSheetName: sheet.name
+            )
+        )
+    }
+
+    private func handleReorderContactSheetImage(
+        draggedURL: URL,
+        before referenceURL: URL
+    ) {
+        guard case .contactSheet(let sheetID) = selection else { return }
+        contactSheetStorage.moveImage(
+            withFileURL: draggedURL,
+            beforeReferenceFileURL: referenceURL,
+            in: sheetID
+        )
+        imageFiles = contactSheetStorage.getImages(for: sheetID)
+    }
+
+    private func removeSelectedImagesFromContactSheet(sheetID: UUID) {
+        let urls = selectedImageFiles.map(\.url)
+        guard !urls.isEmpty else { return }
+
+        let removed = contactSheetStorage.removeImages(withFileURLs: urls, from: sheetID)
+        guard removed > 0 else { return }
+
+        imageFiles = contactSheetStorage.getImages(for: sheetID)
+        pruneSelectionToVisibleFiles()
+        let sheetName = contactSheetStorage.contactSheets.first(where: { $0.id == sheetID })?.name
+            ?? "Contact Sheet"
+        let noun = removed == 1 ? "image" : "images"
+        MicroficheAccessibility.announce("\(removed) \(noun) removed from \(sheetName)")
+    }
+
+    private func removeSelectedOrFileFromActiveContactSheet(_ file: ImageFile) {
+        guard let activeContactSheet else { return }
+
+        if selectedImageFileIDs.contains(file.id), selectedImageFileIDs.count > 1 {
+            removeSelectedImagesFromContactSheet(sheetID: activeContactSheet.id)
+        } else {
+            let removed = contactSheetStorage.removeImages(
+                withFileURLs: [file.url],
+                from: activeContactSheet.id
+            )
+            guard removed > 0 else { return }
+            imageFiles = contactSheetStorage.getImages(for: activeContactSheet.id)
+            selectedImageFileIDs.remove(file.id)
+            if focusedImageFileID == file.id {
+                focusedImageFileID = displayedImageFiles.first?.id
+            }
+            MicroficheAccessibility.announce("1 image removed from \(activeContactSheet.name)")
+        }
+    }
+
+    private func refreshContactSheetImagesIfNeeded(sheetID: UUID) {
         if selection == .contactSheet(sheetID) {
             imageFiles = contactSheetStorage.getImages(for: sheetID)
+        }
+    }
+
+    @ViewBuilder
+    private var contactSheetCurationMenu: some View {
+        if activeContactSheet != nil, !selectedImageFileIDs.isEmpty {
+            Button {
+                guard let activeContactSheet else { return }
+                removeSelectedImagesFromContactSheet(sheetID: activeContactSheet.id)
+            } label: {
+                Label("Remove from Contact Sheet", systemImage: "minus.rectangle.on.rectangle")
+            }
+            .accessibilityIdentifier("contact-sheet.remove-selection")
+        } else if activeContactSheet == nil, !selectedImageFileIDs.isEmpty {
+            Menu {
+                ForEach(contactSheetStorage.contactSheets) { sheet in
+                    Button(sheet.name) {
+                        handleAddSelectionToContactSheet(sheetID: sheet.id)
+                    }
+                }
+                if !contactSheetStorage.contactSheets.isEmpty {
+                    Divider()
+                }
+                Button("New Contact Sheet from Selection") {
+                    handleCreateContactSheetFromSelection()
+                }
+                .accessibilityIdentifier("contact-sheet.new-from-selection")
+            } label: {
+                Label("Add to Contact Sheet", systemImage: "rectangle.stack.badge.plus")
+            }
+            .accessibilityIdentifier("contact-sheet.add-selection")
         }
     }
 
