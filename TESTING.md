@@ -115,9 +115,23 @@ Use mouse `click(forDuration:thenDragTo:)`, not the touch `press` API, for
 macOS drags. Scope context-menu queries to that menu so they cannot match
 hidden items with the same title in the main menu bar.
 
-Run the signed `xcodebuild ... test` command above to verify this matrix. The
-advisory UI job's outcome must be inspected separately from the workflow's
-overall status. A merged PR or a green build is not sufficient to close PCD-26.
+Run the signed `xcodebuild ... test` command above to verify this matrix. A
+merged PR or a green build is not sufficient to close PCD-26 until the cases
+below pass locally and in CI.
+
+### CI tiers
+
+GitHub Actions runs three test jobs on `macos-26`:
+
+| Job | Blocks merge? | Scope |
+| --- | --- | --- |
+| **Unit tests (`MicroficheTests`)** | Yes | Full unit suite |
+| **UI tests (PCD-26 core)** | Yes | Listed in `.github/workflows/ci.yml` (`ui-tests-core` job); matches the PCD-26 interaction matrix above |
+| **UI tests (full suite, advisory)** | No (`continue-on-error`) | Entire `MicroficheUITests` target, including zoom/detail, Quick Preview, metadata drafts, performance, and appearance sweeps |
+
+Treat a green **core** UI job as the automated bar for PCD-26. Inspect the
+**full suite** job when adding new UI tests or after macOS runner changes; fix
+regressions there before promoting cases into the core list.
 
 ## Detail photo zoom and pan
 

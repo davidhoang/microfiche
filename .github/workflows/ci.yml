@@ -76,12 +76,62 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  ui-tests:
-    name: UI tests (advisory)
+  ui-tests-core:
+    name: UI tests (PCD-26 core)
     runs-on: macos-26
-    # UI tests drive the live macOS GUI and are environment-sensitive on hosted
-    # runners (window sizing, hit-testing, appearance). They are still being
-    # triaged on macOS, so run them for signal but do not block the pipeline.
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Run PCD-26 core UI tests
+        run: |
+          set -o pipefail
+          tests=(
+            MicroficheUITests/MicroficheUITests/testAppLaunchesTwice
+            MicroficheUITests/MicroficheUITests/testFixtureLibraryAndRepeatedSelectionTransitions
+            MicroficheUITests/MicroficheUITests/testSelectedAndUnselectedDoubleClicksOpenTheCorrectImageTwice
+            MicroficheUITests/MicroficheUITests/testDragAndContextMenuDoNotDisableLaterClicksTwiceInBothViews
+            MicroficheUITests/MicroficheUITests/testRemovingSelectedImageClearsInspectorWithoutStaleContent
+            MicroficheUITests/MicroficheUITests/testSidebarCollapseAndExpansionPersistAcrossRelaunchTwice
+            MicroficheUITests/MicroficheUITests/testInspectorCollapseAndExpansionPersistAcrossRelaunchTwice
+            MicroficheUITests/MicroficheUITests/testViewModeSwitchingPreservesSelectionAndKeyboardFocusRepeatedly
+            MicroficheUITests/MicroficheUITests/testInspectorTextEditingKeepsKeyboardInputOutOfLibraryNavigation
+            MicroficheUITests/MicroficheUITests/testFloatingViewControlNeverCoversLastItemRepeatedly
+          )
+          args=()
+          for test in "${tests[@]}"; do
+            args+=( "-only-testing:$test" )
+          done
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 180 \
+            -maximum-test-execution-time-allowance 240 \
+            -resultBundlePath build/CoreUITestResults.xcresult \
+            "${args[@]}" \
+            $SIGNING \
+            test
+
+      - name: Upload core UI test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-ui-test-results
+          path: build/CoreUITestResults.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ui-tests:
+    name: UI tests (full suite, advisory)
+    runs-on: macos-26
+    needs: [ui-tests-core]
+    # The full suite includes slower or environment-sensitive cases. Core PCD-26
+    # coverage is enforced by ui-tests-core; inspect this job for extra signal.
     continue-on-error: true
     steps:
       - name: Check out source

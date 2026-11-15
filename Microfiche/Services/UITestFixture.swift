@@ -39,8 +39,8 @@ struct UITestFixture {
                 if arguments.contains("--ui-testing-zoom-images"), index <= 2 {
                     // Large enough to require panning at 100%, but small enough for
                     // UI-test runners to decode within a few seconds.
-                    let width = index == 1 ? 1200 : 900
-                    let height = index == 1 ? 800 : 1200
+                    let width = index == 1 ? 640 : 480
+                    let height = index == 1 ? 480 : 640
                     let bitmap = NSBitmapImageRep(
                         bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
