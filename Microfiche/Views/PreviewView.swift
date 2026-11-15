@@ -18,8 +18,12 @@ struct PreviewView: View {
             ZStack {
                 Color.black.opacity(0.72)
                     .ignoresSafeArea()
+                    .contentShape(Rectangle())
                     .onTapGesture(perform: onDismiss)
-                    .accessibilityHidden(true)
+                    .accessibilityElement()
+                    .accessibilityLabel("Dismiss preview")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityIdentifier("preview.backdrop")
 
                 ZStack {
                     Group {

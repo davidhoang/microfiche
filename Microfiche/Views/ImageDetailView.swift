@@ -398,6 +398,11 @@ struct ImageMetadataInspectorView: View {
                         onReplace(draft.wrappedValue)
                         isEditing.wrappedValue = false
                     } else {
+                        if replaceIdentifier == "inspector.replace-comments" {
+                            isEditingWhereFrom = false
+                        } else if replaceIdentifier == "inspector.replace-where-from" {
+                            isEditingComments = false
+                        }
                         draft.wrappedValue = displayed
                         isEditing.wrappedValue = true
                     }
@@ -530,10 +535,10 @@ struct ImageMetadataInspectorView: View {
         guard !isBatch else { return }
         let urls = files.map(\.url)
         var pending: [BatchMetadataOperation] = []
-        if isEditingComments, commentsDraft != comments {
+        if commentsDraft != comments {
             pending.append(.replaceComments(commentsDraft))
         }
-        if isEditingWhereFrom, whereFromDraft != whereFrom {
+        if whereFromDraft != whereFrom {
             pending.append(.replaceWhereFrom(whereFromDraft))
         }
         isEditingComments = false

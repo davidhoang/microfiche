@@ -30,17 +30,29 @@ enum UITestHost {
         ProcessInfo.processInfo.arguments.contains("--ui-testing-reduce-transparency")
     }
 
+    /// Host displays (including GitHub Actions) can report a visible frame that is a
+    /// few points shorter than the frame AppKit settles on after toolbar layout.
+    private static let visibleFrameHeightSlack: CGFloat = 4
+
     static func fittingWindowFrame(preferredFrame: NSRect, visibleFrame: NSRect) -> NSRect {
+        let maxHeight = max(0, visibleFrame.height - visibleFrameHeightSlack)
         let size = NSSize(
             width: min(preferredFrame.width, visibleFrame.width),
-            height: min(preferredFrame.height, visibleFrame.height)
+            height: min(preferredFrame.height, maxHeight)
         )
-        return NSRect(
+        var origin = NSPoint(
             x: visibleFrame.midX - size.width / 2,
-            y: visibleFrame.midY - size.height / 2,
-            width: size.width,
-            height: size.height
+            y: visibleFrame.midY - size.height / 2
         )
+        origin.x = min(
+            max(origin.x, visibleFrame.minX),
+            visibleFrame.maxX - size.width
+        )
+        origin.y = min(
+            max(origin.y, visibleFrame.minY),
+            visibleFrame.maxY - size.height
+        )
+        return NSRect(origin: origin, size: size)
     }
 
     @MainActor

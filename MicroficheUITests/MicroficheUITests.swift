@@ -589,8 +589,12 @@ final class MicroficheUITests: XCTestCase {
                     let image = waitForFixtureImage(index, in: app)
                     tap(image)
                     image.doubleClick()
+                    XCTAssertTrue(
+                        element("image-load.loaded", in: app).waitForExistence(timeout: 30),
+                        "Expected the detail image to finish loading"
+                    )
                     let canvas = element("detail.zoom.canvas", in: app)
-                    XCTAssertTrue(canvas.waitForExistence(timeout: 10))
+                    XCTAssertTrue(canvas.waitForExistence(timeout: 5))
                     XCTAssertTrue(waitUntil(timeout: 5) {
                         canvas.value as? String == "Fit, horizontal offset 0, vertical offset 0"
                     })
@@ -630,8 +634,9 @@ final class MicroficheUITests: XCTestCase {
         let small = waitForFixtureImage(3, in: app)
         tap(small)
         small.doubleClick()
+        XCTAssertTrue(element("image-load.loaded", in: app).waitForExistence(timeout: 30))
         let canvas = element("detail.zoom.canvas", in: app)
-        XCTAssertTrue(canvas.waitForExistence(timeout: 10))
+        XCTAssertTrue(canvas.waitForExistence(timeout: 5))
         tap(button("detail.zoom.actualSize", in: app))
         canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.6))
             .click(forDuration: 0.1, thenDragTo:
@@ -875,7 +880,7 @@ final class MicroficheUITests: XCTestCase {
                 case "escape": app.typeKey(.escape, modifierFlags: [])
                 case "space": app.typeKey(.space, modifierFlags: [])
                 default:
-                    preview.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)).click()
+                    tap(element("preview.backdrop", in: app))
                 }
                 XCTAssertTrue(preview.waitForNonExistence(timeout: 5))
                 XCTAssertTrue(waitUntilChosen(waitForFixtureImage(1, in: app)))
@@ -1008,9 +1013,13 @@ final class MicroficheUITests: XCTestCase {
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         XCTAssertEqual(app.searchFields.count, 1)
+        let sidebar = element("library.sidebar", in: app)
         let controlsAtEdges = waitUntil(timeout: 5) {
             let window = app.windows.firstMatch.frame
-            return sidebarToggle.frame.maxX < window.minX + window.width * 0.25
+            let leadingLimit = sidebar.exists
+                ? sidebar.frame.maxX + 16
+                : window.minX + window.width * 0.25
+            return sidebarToggle.frame.maxX <= leadingLimit
                 // AppKit includes a one-point bezel outside the search view.
                 && inspectorToggle.frame.minX >= search.frame.maxX - 1
         }
