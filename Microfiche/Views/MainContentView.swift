@@ -211,6 +211,7 @@ struct MainContentView: View {
     let contactSheets: [ContactSheet]
     let activeContactSheet: ContactSheet?
     let isContactSheetLayout: Bool
+    let contactSheetAutoFitEnabled: Bool
     let onAddToContactSheet: (UUID, URL) -> Void
     let onDropToContactSheet: (UUID, [URL]) -> Void
     let onReorderContactSheetImage: (URL, URL) -> Void
@@ -253,7 +254,8 @@ struct MainContentView: View {
                 if let activeContactSheet, isContactSheetLayout {
                     ContactSheetCanvasHeader(
                         name: activeContactSheet.name,
-                        imageCount: imageFiles.count
+                        imageCount: imageFiles.count,
+                        usesAutoFitLayout: contactSheetAutoFitEnabled
                     )
                     .padding(.horizontal, 24)
                     .padding(.top, 8)
@@ -276,7 +278,7 @@ struct MainContentView: View {
                         }
                         Spacer(minLength: 24)
                     } else {
-                        if viewMode == .grid, isContactSheetLayout {
+                        if viewMode == .grid, isContactSheetLayout, contactSheetAutoFitEnabled {
                             ContactSheetAutoLayoutGridView(
                                 imageFiles: imageFiles,
                                 selectedImageFileIDs: $selectedImageFileIDs,
@@ -551,6 +553,7 @@ private struct EmptyLibraryStateView: View {
 private struct ContactSheetCanvasHeader: View {
     let name: String
     let imageCount: Int
+    let usesAutoFitLayout: Bool
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -570,10 +573,11 @@ private struct ContactSheetCanvasHeader: View {
 
     private var subtitle: String {
         let noun = imageCount == 1 ? "image" : "images"
+        let layoutLabel = usesAutoFitLayout ? "Auto Fit layout" : "fixed grid"
         if imageCount == 0 {
-            return "Drop images to build this sheet · auto-fit layout · drag to reorder"
+            return "Drop images to build this sheet · \(layoutLabel) · drag to reorder"
         }
-        return "\(imageCount) \(noun) · auto-fit layout · drag to reorder"
+        return "\(imageCount) \(noun) · \(layoutLabel) · drag to reorder"
     }
 }
 

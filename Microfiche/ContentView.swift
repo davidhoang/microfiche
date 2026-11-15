@@ -203,6 +203,7 @@ struct ContentView: View {
     @AppStorage private var isMetadataInspectorPresented: Bool
     @AppStorage private var isDetailMetadataPresented: Bool
     @AppStorage private var isLibrarySidebarCollapsed: Bool
+    @AppStorage private var contactSheetAutoFitEnabled: Bool
     @State private var externalDriveNotice: String?
     @State private var searchText = ""
     @State private var isLibrarySearchFocused = false
@@ -250,6 +251,11 @@ struct ContentView: View {
                 "librarySidebarCollapsed",
                 store: defaults
             )
+            _contactSheetAutoFitEnabled = AppStorage(
+                wrappedValue: true,
+                "contactSheetAutoFitEnabled",
+                store: defaults
+            )
             _lastSelectedLibraryFolderID = AppStorage(
                 wrappedValue: "",
                 "lastSelectedLibraryFolderID",
@@ -282,6 +288,11 @@ struct ContentView: View {
         _isLibrarySidebarCollapsed = AppStorage(
             wrappedValue: false,
             "librarySidebarCollapsed",
+            store: defaults
+        )
+        _contactSheetAutoFitEnabled = AppStorage(
+            wrappedValue: true,
+            "contactSheetAutoFitEnabled",
             store: defaults
         )
         _lastSelectedLibraryFolderID = AppStorage(
@@ -638,6 +649,7 @@ struct ContentView: View {
                 contactSheets: contactSheetStorage.contactSheets,
                 activeContactSheet: activeContactSheet,
                 isContactSheetLayout: activeContactSheet != nil,
+                contactSheetAutoFitEnabled: contactSheetAutoFitEnabled,
                 onAddToContactSheet: handleAddToContactSheet,
                 onDropToContactSheet: handleDropToContactSheet,
                 onReorderContactSheetImage: handleReorderContactSheetImage,
@@ -682,7 +694,11 @@ struct ContentView: View {
                         )
                         .frame(width: 110)
                         .accessibilityLabel(
-                            activeContactSheet == nil ? "Thumbnail size" : "Contact sheet row height"
+                            activeContactSheet == nil
+                                ? "Thumbnail size"
+                                : (contactSheetAutoFitEnabled
+                                    ? "Contact sheet row height"
+                                    : "Contact sheet thumbnail size")
                         )
                         .accessibilityValue("\(Int(displayedGridThumbnailSize.rounded())) points")
 
@@ -695,7 +711,7 @@ struct ContentView: View {
                         .help(
                             activeContactSheet == nil
                                 ? "Thumbnail Size"
-                                : "Row Height"
+                                : (contactSheetAutoFitEnabled ? "Row Height" : "Thumbnail Size")
                         )
                 } else {
                     Color.clear
@@ -714,6 +730,22 @@ struct ContentView: View {
             }
 
             if let activeContactSheet {
+                if viewMode == .grid {
+                    ToolbarItem(placement: .automatic) {
+                        Picker("Contact Sheet Layout", selection: $contactSheetAutoFitEnabled) {
+                            Text("Auto Fit").tag(true)
+                            Text("Grid").tag(false)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 152)
+                        .help(contactSheetAutoFitEnabled
+                            ? "Justified rows that fill the canvas width"
+                            : "Fixed square grid with adjustable thumbnail size")
+                        .accessibilityIdentifier("contact-sheet.layout-mode")
+                    }
+                    .hideSharedBackgroundIfAvailable()
+                }
+
                 ToolbarItem(placement: .automatic) {
                     Button {
                         presentContactSheetExport(sheetID: activeContactSheet.id)
