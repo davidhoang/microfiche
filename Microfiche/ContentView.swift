@@ -681,7 +681,9 @@ struct ContentView: View {
                             onEditingChanged: handleGridResize
                         )
                         .frame(width: 110)
-                        .accessibilityLabel("Thumbnail size")
+                        .accessibilityLabel(
+                            activeContactSheet == nil ? "Thumbnail size" : "Contact sheet row height"
+                        )
                         .accessibilityValue("\(Int(displayedGridThumbnailSize.rounded())) points")
 
                         Image(systemName: "photo.fill")
@@ -690,7 +692,11 @@ struct ContentView: View {
                             .accessibilityHidden(true)
                     }
                     .fixedSize()
-                    .help("Thumbnail Size")
+                        .help(
+                            activeContactSheet == nil
+                                ? "Thumbnail Size"
+                                : "Row Height"
+                        )
                 } else {
                     Color.clear
                         .frame(width: 168, height: 1)

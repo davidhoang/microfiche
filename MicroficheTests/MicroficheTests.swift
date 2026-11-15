@@ -2029,6 +2029,39 @@ final class MicroficheTests: XCTestCase {
         XCTAssertEqual(storage.getImages(for: secondSheet.id).count, 1)
     }
 
+    func testContactSheetAutoLayoutFillsRowWidthAndCapsTallSingles() {
+        let square = UUID()
+        let wide = UUID()
+        var configuration = ContactSheetAutoLayout.Configuration()
+        configuration.horizontalInset = 0
+        configuration.spacing = 10
+        configuration.minRowHeight = 80
+        configuration.maxRowHeight = 220
+
+        let pair = [
+            ContactSheetLayoutItem(id: square, aspectRatio: 1),
+            ContactSheetLayoutItem(id: wide, aspectRatio: 2),
+        ]
+        let pairPlan = ContactSheetAutoLayout.plan(
+            items: pair,
+            availableWidth: 410,
+            configuration: configuration
+        )
+        XCTAssertEqual(pairPlan.rows.count, 1)
+        let pairRow = pairPlan.rows[0]
+        let pairWidth = pairRow.placements.reduce(CGFloat.zero) { $0 + $1.width }
+            + configuration.spacing * CGFloat(pairRow.placements.count - 1)
+        XCTAssertEqual(pairWidth, pairPlan.contentWidth, accuracy: 0.5)
+
+        let portrait = ContactSheetAutoLayout.plan(
+            items: [ContactSheetLayoutItem(id: UUID(), aspectRatio: 0.5)],
+            availableWidth: 410,
+            configuration: configuration
+        )
+        XCTAssertEqual(portrait.rows.count, 1)
+        XCTAssertLessThanOrEqual(portrait.rows[0].height, configuration.maxRowHeight + 0.5)
+    }
+
     func testContactSheetCurationReordersImageIDs() {
         let first = UUID()
         let second = UUID()

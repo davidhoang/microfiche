@@ -107,7 +107,7 @@ private struct ImageCellClickExclusion: NSViewRepresentable {
     func updateNSView(_ nsView: ImageCellClickExclusionView, context: Context) {}
 }
 
-private struct ImageCellClickMonitor: NSViewRepresentable {
+struct ImageCellClickMonitor: NSViewRepresentable {
     let onSelect: () -> Void
     let onDoubleClick: () -> Void
 
@@ -276,7 +276,26 @@ struct MainContentView: View {
                         }
                         Spacer(minLength: 24)
                     } else {
-                        if viewMode == .grid {
+                        if viewMode == .grid, isContactSheetLayout {
+                            ContactSheetAutoLayoutGridView(
+                                imageFiles: imageFiles,
+                                selectedImageFileIDs: $selectedImageFileIDs,
+                                focusedImageFileID: focusedImageFileID,
+                                onSelectImage: onSelectImage,
+                                onDoubleClickImage: onDoubleClickImage,
+                                targetRowHeight: gridThumbnailSize,
+                                isResizing: isResizingGrid,
+                                scrollToID: $scrollToID,
+                                onRename: onRename,
+                                onReorderContactSheetImage: onReorderContactSheetImage,
+                                contactSheets: contactSheets,
+                                activeContactSheetID: activeContactSheet?.id,
+                                onAddToContactSheet: onAddToContactSheet,
+                                onRemoveFromActiveContactSheet: onRemoveFromActiveContactSheet,
+                                onArchive: onArchive
+                            )
+                            .onAppear { gridColumnCount = 1 }
+                        } else if viewMode == .grid {
                             ImageGridView(
                                 imageFiles: imageFiles,
                                 selectedImageFileIDs: $selectedImageFileIDs,
@@ -552,9 +571,9 @@ private struct ContactSheetCanvasHeader: View {
     private var subtitle: String {
         let noun = imageCount == 1 ? "image" : "images"
         if imageCount == 0 {
-            return "Drop images to build this sheet · drag tiles to reorder"
+            return "Drop images to build this sheet · auto-fit layout · drag to reorder"
         }
-        return "\(imageCount) \(noun) · drag tiles to reorder"
+        return "\(imageCount) \(noun) · auto-fit layout · drag to reorder"
     }
 }
 
@@ -1104,7 +1123,7 @@ struct ImageListRow: View {
     }
 }
 
-private extension View {
+extension View {
     @ViewBuilder
     func imageLibraryContextMenu(
         file: ImageFile,
