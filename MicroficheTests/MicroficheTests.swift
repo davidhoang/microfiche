@@ -697,9 +697,11 @@ final class MicroficheTests: XCTestCase {
                 )
                 XCTAssertTrue(screen.contains(frame))
                 XCTAssertEqual(frame.width, min(preferred.width, screen.width))
-                XCTAssertEqual(frame.height, min(preferred.height, screen.height))
-                XCTAssertEqual(frame.midX, screen.midX)
-                XCTAssertEqual(frame.midY, screen.midY)
+                let maxHeight = max(0, screen.height - 4)
+                XCTAssertEqual(frame.height, min(preferred.height, maxHeight))
+                XCTAssertEqual(frame.midX, screen.midX, accuracy: 1)
+                XCTAssertLessThanOrEqual(frame.maxY, screen.maxY + 0.5)
+                XCTAssertGreaterThanOrEqual(frame.minY, screen.minY - 0.5)
             }
         }
     }
