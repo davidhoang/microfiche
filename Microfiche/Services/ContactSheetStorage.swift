@@ -175,9 +175,9 @@ class ContactSheetStorage: ObservableObject {
     }
 
     func moveImage(withFileURL url: URL, beforeReferenceFileURL referenceURL: URL, in contactSheetID: UUID) {
-        guard let imageID = imageID(forFileURL: url),
-              let referenceID = imageID(forFileURL: referenceURL) else { return }
-        moveImage(imageID: imageID, before: referenceID, in: contactSheetID)
+        guard let movedImageID = imageID(forFileURL: url),
+              let referenceImageID = imageID(forFileURL: referenceURL) else { return }
+        moveImage(imageID: movedImageID, before: referenceImageID, in: contactSheetID)
     }
 
     func getImage(byID id: UUID) -> ContactSheetImage? {

@@ -2730,7 +2730,7 @@ final class MicroficheTests: XCTestCase {
         ])
         XCTAssertTrue(steps[0].message.contains("No import, no copies"))
         XCTAssertTrue(steps[1].message.contains("iCloud Drive"))
-        XCTAssertTrue(steps[2].message.contains("offline"))
+        XCTAssertTrue(steps[2].message.contains("Reorder"))
         XCTAssertTrue(steps[3].message.contains("Finder"))
         XCTAssertTrue(steps.allSatisfy { !$0.title.isEmpty && !$0.message.isEmpty && !$0.symbolName.isEmpty })
     }
