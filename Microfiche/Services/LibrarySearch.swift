@@ -45,6 +45,33 @@ enum LibrarySearch {
         return isCancelled() ? nil : sorted
     }
 
+    /// Filters `files` in their existing order, without applying library sort options.
+    static func filteredPreservingOrder(
+        in files: [ImageFile],
+        metadata: [UUID: LibraryItemMetadata],
+        query: LibrarySearchQuery,
+        isCancelled: () -> Bool = { Task.isCancelled }
+    ) -> [ImageFile]? {
+        let empty = LibraryItemMetadata(resolved: .init(
+            label: .none, tags: [], comments: "", whereFrom: ""
+        ))
+        var matches: [ImageFile] = []
+        for file in files {
+            guard !isCancelled() else { return nil }
+            if LibraryFiltering.matches(
+                file: file,
+                metadata: metadata[file.id] ?? empty,
+                query: query.text,
+                fileType: query.fileType,
+                tag: query.tag,
+                label: query.label
+            ) {
+                matches.append(file)
+            }
+        }
+        return isCancelled() ? nil : matches
+    }
+
     static func evaluate(
         files: [ImageFile],
         metadata: [UUID: LibraryItemMetadata],

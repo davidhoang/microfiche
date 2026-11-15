@@ -1440,6 +1440,33 @@ final class MicroficheTests: XCTestCase {
         }
     }
 
+    func testLibrarySearchFilteredPreservingOrderKeepsContactSheetSequence() throws {
+        let first = ImageFile(url: URL(fileURLWithPath: "/Mood/01.jpg"))
+        let second = ImageFile(url: URL(fileURLWithPath: "/Mood/02.jpg"))
+        let third = ImageFile(url: URL(fileURLWithPath: "/Mood/03.jpg"))
+        let metadata = [
+            first.id: LibraryItemMetadata(resolved: .init(
+                label: .none, tags: ["warm"], comments: "", whereFrom: ""
+            )),
+            third.id: LibraryItemMetadata(resolved: .init(
+                label: .none, tags: ["warm"], comments: "", whereFrom: ""
+            )),
+        ]
+        var query = LibrarySearchQuery()
+        query.tag = "warm"
+        query.sortOption = .name
+        query.sortDirection = .descending
+
+        let filtered = try XCTUnwrap(
+            LibrarySearch.filteredPreservingOrder(
+                in: [first, second, third],
+                metadata: metadata,
+                query: query
+            )
+        )
+        XCTAssertEqual(filtered.map(\.name), ["01.jpg", "03.jpg"])
+    }
+
     func testNativeMetadataReloadsCachedURLAfterExternalTagEdits() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("microfiche-live-tags-\(UUID().uuidString).png")
@@ -2000,6 +2027,58 @@ final class MicroficheTests: XCTestCase {
         XCTAssertEqual(secondID, firstID)
         XCTAssertEqual(storage.getImages(for: firstSheet.id).count, 1)
         XCTAssertEqual(storage.getImages(for: secondSheet.id).count, 1)
+    }
+
+    func testContactSheetCurationReordersImageIDs() {
+        let first = UUID()
+        let second = UUID()
+        let third = UUID()
+        let original = [first, second, third]
+
+        XCTAssertEqual(
+            ContactSheetCuration.orderedImageIDs(original, moving: third, before: first),
+            [third, first, second]
+        )
+        XCTAssertEqual(
+            ContactSheetCuration.orderedImageIDs(original, moving: first, before: third),
+            [second, first, third]
+        )
+        XCTAssertNil(ContactSheetCuration.orderedImageIDs(original, moving: first, before: first))
+    }
+
+    func testContactSheetStorageReordersAndRemovesImagesWithoutDuplicates() throws {
+        let fileManager = FileManager.default
+        let testDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("microfiche-contact-sheet-curation-\(UUID().uuidString)")
+        let firstURL = testDirectory.appendingPathComponent("first.png")
+        let secondURL = testDirectory.appendingPathComponent("second.png")
+        let thirdURL = testDirectory.appendingPathComponent("third.png")
+        let pngData = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )!
+
+        try fileManager.createDirectory(at: testDirectory, withIntermediateDirectories: true)
+        try pngData.write(to: firstURL)
+        try pngData.write(to: secondURL)
+        try pngData.write(to: thirdURL)
+        defer { try? fileManager.removeItem(at: testDirectory) }
+
+        let storage = ContactSheetStorage(baseDirectory: testDirectory, fileManager: fileManager)
+        let sheet = storage.createContactSheet(name: "Mood")
+        XCTAssertEqual(storage.addImages(from: [firstURL, secondURL, thirdURL], to: sheet.id).count, 3)
+
+        let imageIDs = try XCTUnwrap(storage.contactSheets.first?.imageIDs)
+        XCTAssertEqual(imageIDs.count, 3)
+
+        storage.moveImage(imageID: imageIDs[2], before: imageIDs[0], in: sheet.id)
+        XCTAssertEqual(
+            storage.getImages(for: sheet.id).map(\.name),
+            ["third.png", "first.png", "second.png"]
+        )
+
+        let storedSecond = try XCTUnwrap(storage.getImages(for: sheet.id)[2].url)
+        XCTAssertEqual(storage.removeImages(withFileURLs: [storedSecond, storedSecond], from: sheet.id), 1)
+        XCTAssertEqual(storage.getImages(for: sheet.id).map(\.name), ["third.png", "first.png"])
     }
 
     func testContactSheetExportRecordsPreserveOrderWhenStoredImageIsMissing() throws {

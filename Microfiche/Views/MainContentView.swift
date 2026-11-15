@@ -210,10 +210,17 @@ struct MainContentView: View {
     let onRename: (URL, String) -> Void
     let contactSheets: [ContactSheet]
     let activeContactSheet: ContactSheet?
+    let isContactSheetLayout: Bool
     let onAddToContactSheet: (UUID, URL) -> Void
     let onDropToContactSheet: (UUID, [URL]) -> Void
+    let onReorderContactSheetImage: (URL, URL) -> Void
+    let onRemoveFromActiveContactSheet: ((ImageFile) -> Void)?
     let onArchive: (ImageFile) -> Void
     @State private var isContactSheetDropTargeted = false
+
+    private var gridLayout: ImageGridView.LayoutStyle {
+        isContactSheetLayout ? .contactSheet : .library
+    }
 
     var body: some View {
         ZStack {
@@ -241,6 +248,15 @@ struct MainContentView: View {
                     }
                     .padding(.horizontal, 28)
                     .padding(.top, 12)
+                }
+
+                if let activeContactSheet, isContactSheetLayout {
+                    ContactSheetCanvasHeader(
+                        name: activeContactSheet.name,
+                        imageCount: imageFiles.count
+                    )
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
                 }
 
                 VStack {
@@ -272,8 +288,13 @@ struct MainContentView: View {
                                 scrollToID: $scrollToID,
                                 columnCount: $gridColumnCount,
                                 onRename: onRename,
+                                layoutStyle: gridLayout,
+                                allowsContactSheetReorder: isContactSheetLayout,
+                                onReorderContactSheetImage: onReorderContactSheetImage,
                                 contactSheets: contactSheets,
+                                activeContactSheetID: activeContactSheet?.id,
                                 onAddToContactSheet: onAddToContactSheet,
+                                onRemoveFromActiveContactSheet: onRemoveFromActiveContactSheet,
                                 onArchive: onArchive
                             )
                         } else {
@@ -285,8 +306,12 @@ struct MainContentView: View {
                                 onDoubleClickImage: onDoubleClickImage,
                                 scrollToID: $scrollToID,
                                 onRename: onRename,
+                                allowsContactSheetReorder: isContactSheetLayout,
+                                onReorderContactSheetImage: onReorderContactSheetImage,
                                 contactSheets: contactSheets,
+                                activeContactSheetID: activeContactSheet?.id,
                                 onAddToContactSheet: onAddToContactSheet,
+                                onRemoveFromActiveContactSheet: onRemoveFromActiveContactSheet,
                                 onArchive: onArchive
                             )
                         }
@@ -484,7 +509,7 @@ private struct EmptyLibraryStateView: View {
             return "Try a different name, camera, lens, date, tag, file type, or clear the active filters."
         }
         if let activeContactSheet {
-            return "Drag image files into \(activeContactSheet.name) or drop them on its sidebar item."
+            return "Drag image files into \(activeContactSheet.name) or drop them on its sidebar item. Drag tiles to change order."
         }
         return "Link a folder or drop images into a contact sheet to start building a library."
     }
@@ -501,6 +526,35 @@ private struct EmptyLibraryStateView: View {
         if isFiltering { return "No matches" }
         if activeContactSheet != nil { return "Drop images here" }
         return "No images yet"
+    }
+}
+
+private struct ContactSheetCanvasHeader: View {
+    let name: String
+    let imageCount: Int
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(name)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("contact-sheet.canvas-header")
+    }
+
+    private var subtitle: String {
+        let noun = imageCount == 1 ? "image" : "images"
+        if imageCount == 0 {
+            return "Drop images to build this sheet · drag tiles to reorder"
+        }
+        return "\(imageCount) \(noun) · drag tiles to reorder"
     }
 }
 
@@ -530,23 +584,55 @@ private struct ContactSheetDropOverlay: View {
 // MARK: - Grid View
 
 struct ImageGridView: View {
+    enum LayoutStyle {
+        case library
+        case contactSheet
+    }
+
     enum Layout {
         static let aspectRatio: CGFloat = 3 / 2
         static let spacing: CGFloat = 14
         static let horizontalInset: CGFloat = 12
         static let selectionInset: CGFloat = 6
 
-        static func columnCount(availableWidth: CGFloat, thumbnailWidth: CGFloat) -> Int {
-            let usableWidth = max(0, availableWidth - (horizontalInset * 2))
-            let cellWidth = thumbnailWidth + selectionInset
-            return max(1, Int((usableWidth + spacing) / (cellWidth + spacing)))
+        static func metrics(for style: LayoutStyle) -> (aspectRatio: CGFloat, spacing: CGFloat, horizontalInset: CGFloat) {
+            switch style {
+            case .library:
+                return (aspectRatio, spacing, horizontalInset)
+            case .contactSheet:
+                return (
+                    ContactSheetLayoutMetrics.gridAspectRatio,
+                    ContactSheetLayoutMetrics.gridSpacing,
+                    ContactSheetLayoutMetrics.horizontalInset
+                )
+            }
         }
 
-        static func columns(availableWidth: CGFloat, thumbnailWidth: CGFloat) -> [GridItem] {
+        static func columnCount(
+            availableWidth: CGFloat,
+            thumbnailWidth: CGFloat,
+            style: LayoutStyle = .library
+        ) -> Int {
+            let metrics = metrics(for: style)
+            let usableWidth = max(0, availableWidth - (metrics.horizontalInset * 2))
+            let cellWidth = thumbnailWidth + selectionInset
+            return max(1, Int((usableWidth + metrics.spacing) / (cellWidth + metrics.spacing)))
+        }
+
+        static func columns(
+            availableWidth: CGFloat,
+            thumbnailWidth: CGFloat,
+            style: LayoutStyle = .library
+        ) -> [GridItem] {
+            let metrics = metrics(for: style)
             let cellWidth = thumbnailWidth + selectionInset
             return Array(
-                repeating: GridItem(.fixed(cellWidth), spacing: spacing),
-                count: columnCount(availableWidth: availableWidth, thumbnailWidth: thumbnailWidth)
+                repeating: GridItem(.fixed(cellWidth), spacing: metrics.spacing),
+                count: columnCount(
+                    availableWidth: availableWidth,
+                    thumbnailWidth: thumbnailWidth,
+                    style: style
+                )
             )
         }
     }
@@ -561,11 +647,20 @@ struct ImageGridView: View {
     @Binding var scrollToID: UUID?
     @Binding var columnCount: Int
     let onRename: (URL, String) -> Void
+    let layoutStyle: LayoutStyle
+    let allowsContactSheetReorder: Bool
+    let onReorderContactSheetImage: (URL, URL) -> Void
     let contactSheets: [ContactSheet]
+    let activeContactSheetID: UUID?
     let onAddToContactSheet: (UUID, URL) -> Void
+    let onRemoveFromActiveContactSheet: ((ImageFile) -> Void)?
     let onArchive: (ImageFile) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var prefetcher = ViewportImagePrefetcher()
+
+    private var layoutMetrics: (aspectRatio: CGFloat, spacing: CGFloat, horizontalInset: CGFloat) {
+        Layout.metrics(for: layoutStyle)
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -574,10 +669,11 @@ struct ImageGridView: View {
                     LazyVGrid(
                         columns: Layout.columns(
                             availableWidth: geometry.size.width,
-                            thumbnailWidth: thumbnailSize
+                            thumbnailWidth: thumbnailSize,
+                            style: layoutStyle
                         ),
                         alignment: .leading,
-                        spacing: Layout.spacing
+                        spacing: layoutMetrics.spacing
                     ) {
                         ForEach(Array(imageFiles.enumerated()), id: \.element.id) { index, file in
                             GridCell(
@@ -586,12 +682,16 @@ struct ImageGridView: View {
                                 isFocused: focusedImageFileID == file.id,
                                 size: thumbnailSize,
                                 isResizing: isResizing,
-                                aspectRatio: Layout.aspectRatio,
+                                aspectRatio: layoutMetrics.aspectRatio,
+                                allowsContactSheetReorder: allowsContactSheetReorder,
+                                onReorderContactSheetImage: onReorderContactSheetImage,
                                 onSelectImage: onSelectImage,
                                 onDoubleClickImage: onDoubleClickImage,
                                 onRename: onRename,
                                 contactSheets: contactSheets,
+                                activeContactSheetID: activeContactSheetID,
                                 onAddToContactSheet: onAddToContactSheet,
+                                onRemoveFromActiveContactSheet: onRemoveFromActiveContactSheet,
                                 onArchive: onArchive
                             )
                             .id(file.id)
@@ -612,7 +712,7 @@ struct ImageGridView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, Layout.horizontalInset)
+                    .padding(.horizontal, layoutMetrics.horizontalInset)
                     .padding(.vertical, 16)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
@@ -677,7 +777,8 @@ struct ImageGridView: View {
 
         let count = Layout.columnCount(
             availableWidth: width,
-            thumbnailWidth: thumbnailSize
+            thumbnailWidth: thumbnailSize,
+            style: layoutStyle
         )
         if count != columnCount {
             columnCount = count
@@ -694,13 +795,18 @@ struct GridCell: View {
     let size: CGFloat
     let isResizing: Bool
     let aspectRatio: CGFloat
+    let allowsContactSheetReorder: Bool
+    let onReorderContactSheetImage: (URL, URL) -> Void
     let onSelectImage: (UUID) -> Void
     let onDoubleClickImage: (UUID) -> Void
     let onRename: (URL, String) -> Void
     let contactSheets: [ContactSheet]
+    let activeContactSheetID: UUID?
     let onAddToContactSheet: (UUID, URL) -> Void
+    let onRemoveFromActiveContactSheet: ((ImageFile) -> Void)?
     let onArchive: (ImageFile) -> Void
     @State private var isHovered = false
+    @State private var isReorderDropTargeted = false
     @AccessibilityFocusState private var isAccessibilityFocused: Bool
 
     var body: some View {
@@ -738,10 +844,23 @@ struct GridCell: View {
         .onDrag {
             ImageDropSupport.itemProvider(for: file.url)
         }
+        .onDrop(
+            of: ImageDropSupport.acceptedContentTypes,
+            isTargeted: allowsContactSheetReorder ? $isReorderDropTargeted : .constant(false),
+            perform: handleContactSheetReorderDrop
+        )
+        .overlay {
+            if isReorderDropTargeted {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+            }
+        }
         .imageLibraryContextMenu(
             file: file,
             contactSheets: contactSheets,
+            activeContactSheetID: activeContactSheetID,
             onAddToContactSheet: onAddToContactSheet,
+            onRemoveFromActiveContactSheet: onRemoveFromActiveContactSheet,
             onArchive: onArchive
         )
         .accessibilityElement(children: .ignore)
@@ -759,6 +878,20 @@ struct GridCell: View {
             onDoubleClickImage(file.id)
         }
     }
+
+    private func handleContactSheetReorderDrop(providers: [NSItemProvider]) -> Bool {
+        guard allowsContactSheetReorder,
+              ImageDropSupport.canLoadFileURL(from: providers) else { return false }
+
+        ImageDropSupport.loadFileURLs(from: providers) { urls in
+            guard let draggedURL = urls.first else { return }
+            let normalizedDragged = draggedURL.standardizedFileURL
+            let normalizedTarget = file.url.standardizedFileURL
+            guard normalizedDragged != normalizedTarget else { return }
+            onReorderContactSheetImage(normalizedDragged, normalizedTarget)
+        }
+        return true
+    }
 }
 
 // MARK: - List View
@@ -771,8 +904,12 @@ struct ImageListView: View {
     let onDoubleClickImage: (UUID) -> Void
     @Binding var scrollToID: UUID?
     let onRename: (URL, String) -> Void
+    let allowsContactSheetReorder: Bool
+    let onReorderContactSheetImage: (URL, URL) -> Void
     let contactSheets: [ContactSheet]
+    let activeContactSheetID: UUID?
     let onAddToContactSheet: (UUID, URL) -> Void
+    let onRemoveFromActiveContactSheet: ((ImageFile) -> Void)?
     let onArchive: (ImageFile) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var prefetcher = ViewportImagePrefetcher()
@@ -789,8 +926,12 @@ struct ImageListView: View {
                             onSelectImage: onSelectImage,
                             onDoubleClickImage: onDoubleClickImage,
                             onRename: onRename,
+                            allowsContactSheetReorder: allowsContactSheetReorder,
+                            onReorderContactSheetImage: onReorderContactSheetImage,
                             contactSheets: contactSheets,
+                            activeContactSheetID: activeContactSheetID,
                             onAddToContactSheet: onAddToContactSheet,
+                            onRemoveFromActiveContactSheet: onRemoveFromActiveContactSheet,
                             onArchive: onArchive
                         )
                         .id(file.id)
@@ -848,10 +989,15 @@ struct ImageListRow: View {
     let onSelectImage: (UUID) -> Void
     let onDoubleClickImage: (UUID) -> Void
     let onRename: (URL, String) -> Void
+    let allowsContactSheetReorder: Bool
+    let onReorderContactSheetImage: (URL, URL) -> Void
     let contactSheets: [ContactSheet]
+    let activeContactSheetID: UUID?
     let onAddToContactSheet: (UUID, URL) -> Void
+    let onRemoveFromActiveContactSheet: ((ImageFile) -> Void)?
     let onArchive: (ImageFile) -> Void
     @State private var isHovered = false
+    @State private var isReorderDropTargeted = false
     @Environment(\.colorSchemeContrast) private var contrast
     @AccessibilityFocusState private var isAccessibilityFocused: Bool
 
@@ -902,10 +1048,23 @@ struct ImageListRow: View {
         .onDrag {
             ImageDropSupport.itemProvider(for: file.url)
         }
+        .onDrop(
+            of: ImageDropSupport.acceptedContentTypes,
+            isTargeted: allowsContactSheetReorder ? $isReorderDropTargeted : .constant(false),
+            perform: handleContactSheetReorderDrop
+        )
+        .overlay {
+            if isReorderDropTargeted {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+            }
+        }
         .imageLibraryContextMenu(
             file: file,
             contactSheets: contactSheets,
+            activeContactSheetID: activeContactSheetID,
             onAddToContactSheet: onAddToContactSheet,
+            onRemoveFromActiveContactSheet: onRemoveFromActiveContactSheet,
             onArchive: onArchive
         )
         .overlay {
@@ -929,6 +1088,20 @@ struct ImageListRow: View {
             onDoubleClickImage(file.id)
         }
     }
+
+    private func handleContactSheetReorderDrop(providers: [NSItemProvider]) -> Bool {
+        guard allowsContactSheetReorder,
+              ImageDropSupport.canLoadFileURL(from: providers) else { return false }
+
+        ImageDropSupport.loadFileURLs(from: providers) { urls in
+            guard let draggedURL = urls.first else { return }
+            let normalizedDragged = draggedURL.standardizedFileURL
+            let normalizedTarget = file.url.standardizedFileURL
+            guard normalizedDragged != normalizedTarget else { return }
+            onReorderContactSheetImage(normalizedDragged, normalizedTarget)
+        }
+        return true
+    }
 }
 
 private extension View {
@@ -936,11 +1109,19 @@ private extension View {
     func imageLibraryContextMenu(
         file: ImageFile,
         contactSheets: [ContactSheet],
+        activeContactSheetID: UUID?,
         onAddToContactSheet: @escaping (UUID, URL) -> Void,
+        onRemoveFromActiveContactSheet: ((ImageFile) -> Void)?,
         onArchive: @escaping (ImageFile) -> Void
     ) -> some View {
         contextMenu {
-            if !contactSheets.isEmpty {
+            if activeContactSheetID != nil, let onRemoveFromActiveContactSheet {
+                Button("Remove from Contact Sheet") {
+                    onRemoveFromActiveContactSheet(file)
+                }
+            }
+
+            if activeContactSheetID == nil, !contactSheets.isEmpty {
                 Menu("Add to Contact Sheet") {
                     ForEach(contactSheets) { sheet in
                         Button(sheet.name) {
@@ -954,8 +1135,10 @@ private extension View {
                 NSWorkspace.shared.activateFileViewerSelecting([file.url])
             }
 
-            Button("Move to Archive") {
-                onArchive(file)
+            if activeContactSheetID == nil {
+                Button("Move to Archive") {
+                    onArchive(file)
+                }
             }
         }
     }
